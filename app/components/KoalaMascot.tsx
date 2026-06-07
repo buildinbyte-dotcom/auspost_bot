@@ -183,6 +183,99 @@ export default function KoalaMascot({
     }
   }, [fireWave]);
 
+  /* ── Idle engagement: random waves to attract kids ───────────────── */
+
+  const idleWaveRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (!fireWave) return;
+
+    // Only run idle engagement when NOT speaking
+    if (isSpeaking) {
+      if (idleWaveRef.current !== null) {
+        window.clearTimeout(idleWaveRef.current);
+        idleWaveRef.current = null;
+      }
+      return;
+    }
+
+    const scheduleIdleWave = () => {
+      // Wave every 10-18 seconds while idle
+      const delay = 10000 + Math.random() * 8000;
+      idleWaveRef.current = window.setTimeout(() => {
+        fireWave();
+        scheduleIdleWave();
+      }, delay);
+    };
+
+    scheduleIdleWave();
+
+    return () => {
+      if (idleWaveRef.current !== null) {
+        window.clearTimeout(idleWaveRef.current);
+        idleWaveRef.current = null;
+      }
+    };
+  }, [fireWave, isSpeaking]);
+
+  /* ── Idle engagement: playful mouth wiggles ──────────────────────── */
+
+  const idleMouthRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (!setMouthIndex) return;
+
+    if (isSpeaking) {
+      if (idleMouthRef.current !== null) {
+        window.clearTimeout(idleMouthRef.current);
+        idleMouthRef.current = null;
+      }
+      return;
+    }
+
+    const mouthWiggle = () => {
+      // Quick mouth movement sequence: rest → smile/open → rest
+      const sequences = [
+        [3, 0],           // quick "ah!" open then close
+        [4, 2, 0],        // wide → small → rest (like a little giggle)
+        [5, 0],           // round "ooh" → rest
+        [2, 4, 0],        // small → wide → rest (curious look)
+        [1, 3, 0],        // closed → open → rest (little yawn)
+      ];
+      const seq = sequences[Math.floor(Math.random() * sequences.length)];
+      let step = 0;
+
+      const playStep = () => {
+        if (step >= seq.length) return;
+        setMouthIndex(seq[step]);
+        step++;
+        setTimeout(playStep, 120 + Math.random() * 80);
+      };
+
+      playStep();
+    };
+
+    const scheduleWiggle = () => {
+      // Wiggle every 6-12 seconds while idle
+      const delay = 6000 + Math.random() * 6000;
+      idleMouthRef.current = window.setTimeout(() => {
+        mouthWiggle();
+        scheduleWiggle();
+      }, delay);
+    };
+
+    // Start after a short delay
+    const initDelay = window.setTimeout(() => scheduleWiggle(), 3000);
+
+    return () => {
+      window.clearTimeout(initDelay);
+      if (idleMouthRef.current !== null) {
+        window.clearTimeout(idleMouthRef.current);
+        idleMouthRef.current = null;
+      }
+    };
+  }, [setMouthIndex, isSpeaking]);
+
   /* ── Wave when greeting words detected in speech ─────────────────── */
 
   useEffect(() => {
