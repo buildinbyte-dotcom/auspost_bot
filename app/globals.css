@@ -435,6 +435,25 @@ body {
     inset 0 2px 4px rgba(255, 255, 255, 0.2) !important;
 }
 
+.finish-chat-btn {
+  margin-top: 10px;
+  background: rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: var(--radius-full);
+  padding: 6px 18px;
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 12px;
+  font-weight: 600;
+  font-family: 'Nunito', sans-serif;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.finish-chat-btn:hover {
+  background: rgba(255, 255, 255, 0.2);
+  color: #fff;
+}
+
 .mic-icon {
   font-size: 36px;
   line-height: 1;

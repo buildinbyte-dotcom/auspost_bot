@@ -177,6 +177,12 @@ function ConversationButton({
     }, INACTIVITY_TIMEOUT);
   }, [clearInactivity, onEndConversation]);
 
+  const inConvoRef = useRef(inConversation);
+  inConvoRef.current = inConversation;
+
+  const phaseRef = useRef(phase);
+  phaseRef.current = phase;
+
   // Start listening
   const startListening = useCallback(() => {
     if (recRef.current) return; // already listening
@@ -209,22 +215,30 @@ function ConversationButton({
     rec.onend = () => {
       setListening(false);
       recRef.current = null;
+      // Auto-restart if still in conversation and not busy
+      if (inConvoRef.current && phaseRef.current === 'idle') {
+        setTimeout(() => startListening(), 300);
+      }
     };
     rec.onerror = () => {
       setListening(false);
       recRef.current = null;
+      // Auto-restart on error too if in conversation
+      if (inConvoRef.current && phaseRef.current === 'idle') {
+        setTimeout(() => startListening(), 500);
+      }
     };
     recRef.current = rec;
     rec.start();
   }, [onTranscript, armInactivity, clearInactivity]);
 
-  // Auto-listen when Kody finishes speaking
+  // Auto-listen when Kody finishes speaking (phase transitions to idle)
   useEffect(() => {
-    if (inConversation && autoListen && phase === 'idle') {
+    if (inConversation && phase === 'idle' && !recRef.current) {
       const t = setTimeout(() => startListening(), 400);
       return () => clearTimeout(t);
     }
-  }, [inConversation, autoListen, phase, startListening]);
+  }, [inConversation, phase, startListening]);
 
   // Cleanup on unmount
   useEffect(() => {
@@ -293,9 +307,24 @@ function ConversationButton({
               : phase === 'booting'
                 ? '✨ Waking up…'
                 : inConversation
-                  ? 'Tap to speak again'
-                  : "Let's Talk!"}
-      </p>
+                  ? '🎧 Listening…'
+                  : "Let's Talk!"}</p>
+
+      {/* Finish chatting button — visible during conversation */}
+      {inConversation && (
+        <button
+          className="finish-chat-btn"
+          onClick={() => {
+            recRef.current?.stop();
+            recRef.current = null;
+            setListening(false);
+            clearInactivity();
+            onEndConversation();
+          }}
+        >
+          👋 Finish Chatting
+        </button>
+      )}
     </div>
   );
 }
