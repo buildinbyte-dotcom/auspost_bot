@@ -130,25 +130,56 @@ const CONFETTI = [
   { color: '#00D4AA', size: 8, left: '14%', anim: 'animate-confetti-8' },
 ];
 
-// ── Microphone Button ─────────────────────────────────────────────────────────
+// ── Conversation Button ───────────────────────────────────────────────────────
 
-interface MicButtonProps {
+interface ConversationButtonProps {
   onTranscript: (text: string) => void;
   disabled: boolean;
   phase: Phase;
+  inConversation: boolean;
+  onStartConversation: () => void;
+  onEndConversation: () => void;
+  autoListen: boolean;
 }
 
-function MicButton({ onTranscript, disabled, phase }: MicButtonProps) {
+function ConversationButton({
+  onTranscript,
+  disabled,
+  phase,
+  inConversation,
+  onStartConversation,
+  onEndConversation,
+  autoListen,
+}: ConversationButtonProps) {
   const [listening, setListening] = useState(false);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const recRef = useRef<any>(null);
+  const inactivityRef = useRef<number | null>(null);
+  const INACTIVITY_TIMEOUT = 30_000; // 30 seconds
 
-  const toggle = useCallback(() => {
-    if (disabled) return;
-    if (listening) {
-      recRef.current?.stop();
-      return;
+  // Clear inactivity timer
+  const clearInactivity = useCallback(() => {
+    if (inactivityRef.current !== null) {
+      window.clearTimeout(inactivityRef.current);
+      inactivityRef.current = null;
     }
+  }, []);
+
+  // Start inactivity timer
+  const armInactivity = useCallback(() => {
+    clearInactivity();
+    inactivityRef.current = window.setTimeout(() => {
+      // No response for 30s — end conversation
+      recRef.current?.stop();
+      recRef.current = null;
+      setListening(false);
+      onEndConversation();
+    }, INACTIVITY_TIMEOUT);
+  }, [clearInactivity, onEndConversation]);
+
+  // Start listening
+  const startListening = useCallback(() => {
+    if (recRef.current) return; // already listening
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const win = window as any;
@@ -163,11 +194,17 @@ function MicButton({ onTranscript, disabled, phase }: MicButtonProps) {
     rec.interimResults = false;
     rec.maxAlternatives = 1;
     rec.continuous = false;
-    rec.onstart = () => setListening(true);
+    rec.onstart = () => {
+      setListening(true);
+      armInactivity(); // start 30s countdown
+    };
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     rec.onresult = (e: any) => {
       const t = e.results[0]?.[0]?.transcript?.trim();
-      if (t) onTranscript(t);
+      if (t) {
+        clearInactivity();
+        onTranscript(t);
+      }
     };
     rec.onend = () => {
       setListening(false);
@@ -179,15 +216,46 @@ function MicButton({ onTranscript, disabled, phase }: MicButtonProps) {
     };
     recRef.current = rec;
     rec.start();
-  }, [disabled, listening, onTranscript]);
+  }, [onTranscript, armInactivity, clearInactivity]);
 
-  const isActive = listening;
+  // Auto-listen when Kody finishes speaking
+  useEffect(() => {
+    if (inConversation && autoListen && phase === 'idle') {
+      const t = setTimeout(() => startListening(), 400);
+      return () => clearTimeout(t);
+    }
+  }, [inConversation, autoListen, phase, startListening]);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      clearInactivity();
+      recRef.current?.stop();
+    };
+  }, [clearInactivity]);
+
+  const handleClick = () => {
+    if (disabled) return;
+
+    if (!inConversation) {
+      // Enter conversation mode
+      onStartConversation();
+      startListening();
+    } else if (listening) {
+      // Already listening, stop manually
+      recRef.current?.stop();
+    } else {
+      // In conversation but not listening, restart
+      startListening();
+    }
+  };
+
   const isBusy = phase === 'speaking' || phase === 'thinking';
 
   return (
     <div className="mic-container">
-      {/* Pulse rings when idle */}
-      {phase === 'idle' && !listening && (
+      {/* Pulse rings when idle (attraction mode) */}
+      {!inConversation && phase !== 'booting' && (
         <>
           <div className="mic-pulse-ring mic-pulse-ring-1" />
           <div className="mic-pulse-ring mic-pulse-ring-2" />
@@ -195,7 +263,7 @@ function MicButton({ onTranscript, disabled, phase }: MicButtonProps) {
       )}
 
       {/* Sound waves when listening */}
-      {isActive && (
+      {listening && (
         <div className="mic-waves">
           <div className="mic-wave mic-wave-1" />
           <div className="mic-wave mic-wave-2" />
@@ -205,26 +273,28 @@ function MicButton({ onTranscript, disabled, phase }: MicButtonProps) {
 
       <button
         id="mic-button"
-        onClick={toggle}
+        onClick={handleClick}
         disabled={disabled}
-        className={`mic-button ${isActive ? 'mic-active' : ''} ${disabled ? 'mic-disabled' : ''}`}
-        aria-label={isActive ? 'Stop listening' : 'Start talking to Kody'}
+        className={`mic-button ${listening ? 'mic-active' : ''} ${inConversation && !listening ? 'mic-in-convo' : ''} ${disabled ? 'mic-disabled' : ''}`}
+        aria-label={inConversation ? 'In conversation with Kody' : "Let's talk to Kody"}
       >
         <span className="mic-icon">
-          {isActive ? '🎤' : isBusy ? '⏳' : '🎤'}
+          {listening ? '🎤' : isBusy ? '⏳' : inConversation ? '🎤' : '💬'}
         </span>
       </button>
 
       <p className="mic-label">
-        {isActive
-          ? '🎧 Listening to you…'
+        {listening
+          ? '🎧 Listening…'
           : phase === 'speaking'
             ? '🔊 Kody is talking…'
             : phase === 'thinking'
               ? '🤔 Kody is thinking…'
               : phase === 'booting'
                 ? '✨ Waking up…'
-                : 'Tap to talk to Kody!'}
+                : inConversation
+                  ? 'Tap to speak again'
+                  : "Let's Talk!"}
       </p>
     </div>
   );
@@ -312,6 +382,7 @@ export default function Home() {
   const [voucher, setVoucher] = useState<VoucherData | null>(null);
   const [showVoucher, setShowVoucher] = useState(false);
   const [devMode, setDevMode] = useState(false);
+  const [inConversation, setInConversation] = useState(false);
   const idleRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // ── Talk-time tracking for voucher eligibility ─────────────────────────────
@@ -321,12 +392,12 @@ export default function Home() {
   const VOUCHER_THRESHOLD = 60; // 1 minute in seconds
 
   const VOUCHER_REJECTIONS = [
-    "Haha, nice try mate! But you gotta chat with me first! Tap the mic and let's talk!",
-    "Oi! You haven't even said hello yet! Come on, tap the microphone and let's be friends first!",
+    "Haha, nice try mate! But you gotta chat with me first! Press Let's Talk and chat with me!",
+    "Oi! You haven't even said hello yet! Come on, press the button and let's be friends first!",
     "Whoa there, speedy! You need to have a proper yarn with me before you get a prize!",
     "Ha! You think vouchers grow on eucalyptus trees? Talk to me for a bit first, mate!",
-    "Not so fast, champion! I need to get to know you first! Tap the mic and tell me something!",
-    "Hmm, I don't remember chatting with you yet! Give me a tap on the mic and let's have some fun first!",
+    "Not so fast, champion! I need to get to know you first! Press Let's Talk!",
+    "Hmm, I don't remember chatting with you yet! Press the chat button and let's have some fun first!",
   ];
 
   // ── Kody speaks ─────────────────────────────────────────────────────────────
@@ -384,10 +455,12 @@ export default function Home() {
 
   const armIdle = useCallback(() => {
     if (idleRef.current) clearTimeout(idleRef.current);
+    // Only run idle prompts when NOT in conversation
+    if (inConversation) return;
     // Speak a random engagement prompt every 15-25 seconds
     const delay = 15000 + Math.random() * 10000;
     idleRef.current = setTimeout(async () => {
-      if (inStory) return;
+      if (inStory || inConversation) return;
       // Cycle through prompts so kids hear variety
       const prompt = IDLE_PROMPTS[idlePromptIndexRef.current % IDLE_PROMPTS.length];
       idlePromptIndexRef.current += 1;
@@ -395,7 +468,33 @@ export default function Home() {
       setPhase('idle');
       armIdle();
     }, delay);
-  }, [inStory, kodySpeak]);
+  }, [inStory, inConversation, kodySpeak]);
+
+  // ── Conversation lifecycle ─────────────────────────────────────────────────
+
+  const startConversation = useCallback(() => {
+    if (idleRef.current) clearTimeout(idleRef.current);
+    if (typeof window !== 'undefined') window.speechSynthesis?.cancel();
+    setInConversation(true);
+    setHasTalked(true);
+    setBubble('');
+    setStatusText('');
+    talkStartRef.current = Date.now();
+  }, []);
+
+  const endConversation = useCallback(async () => {
+    setInConversation(false);
+    if (typeof window !== 'undefined') window.speechSynthesis?.cancel();
+    setIsTalking(false);
+    setSpeakingText('');
+    setBubble('');
+    setStatusText('');
+    // Kody says goodbye
+    await kodySpeak("It was so fun chatting with you! Come back anytime, mate!");
+    setPhase('idle');
+    // Resume idle attraction prompts
+    armIdle();
+  }, [kodySpeak, armIdle]);
 
   // ── Boot greeting ────────────────────────────────────────────────────────────
 
@@ -626,6 +725,10 @@ export default function Home() {
     setChatHistory([]);
     setVoucher(null);
     setShowVoucher(false);
+    setInConversation(false);
+    setHasTalked(false);
+    setTotalTalkTime(0);
+    talkStartRef.current = null;
 
     const greeting = GREETINGS[Math.floor(Math.random() * GREETINGS.length)];
     setTimeout(async () => {
@@ -798,13 +901,17 @@ export default function Home() {
       {/* ── Thinking dots ── */}
       {phase === 'thinking' && !bubble && !statusText && <ThinkingDots />}
 
-      {/* ── Microphone + Voucher row ── */}
+      {/* ── Conversation button + Voucher row ── */}
       <div className="mic-area">
         <div className="mic-voucher-row">
-          <MicButton
+          <ConversationButton
             onTranscript={handleVoice}
             disabled={micDisabled}
             phase={phase}
+            inConversation={inConversation}
+            onStartConversation={startConversation}
+            onEndConversation={endConversation}
+            autoListen={inConversation && phase === 'idle'}
           />
         </div>
 

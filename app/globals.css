@@ -427,6 +427,14 @@ body {
   cursor: not-allowed;
 }
 
+.mic-in-convo {
+  background: linear-gradient(135deg, #2d8a4e, #34a853) !important;
+  box-shadow:
+    0 8px 32px rgba(52, 168, 83, 0.4),
+    0 0 0 4px rgba(255, 255, 255, 0.1),
+    inset 0 2px 4px rgba(255, 255, 255, 0.2) !important;
+}
+
 .mic-icon {
   font-size: 36px;
   line-height: 1;
