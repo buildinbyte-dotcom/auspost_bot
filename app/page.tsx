@@ -79,12 +79,14 @@ export default function Home() {
   const [showVoucher, setShowVoucher]   = useState(false);
   const [inConversation, setInConversation] = useState(false);
 
-  const pcRef         = useRef<RTCPeerConnection | null>(null);
-  const dcRef         = useRef<RTCDataChannel | null>(null);
-  const audioRef      = useRef<HTMLAudioElement | null>(null);
-  const localStreamRef = useRef<MediaStream | null>(null);
-  const transcriptRef  = useRef('');
+  const pcRef              = useRef<RTCPeerConnection | null>(null);
+  const dcRef              = useRef<RTCDataChannel | null>(null);
+  const audioRef           = useRef<HTMLAudioElement | null>(null);
+  const localStreamRef     = useRef<MediaStream | null>(null);
+  const transcriptRef      = useRef('');
   const processedToolCallsRef = useRef<Set<string>>(new Set());
+  const audioCtxRef        = useRef<AudioContext | null>(null);
+  const animFrameRef       = useRef<number | null>(null);
 
   // Use a ref for the event handler so it always has fresh state without stale closures
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -107,7 +109,7 @@ export default function Home() {
         type: 'conversation.item.create',
         item: { type: 'function_call_output', call_id: callId, output: JSON.stringify(data) },
       }));
-      dc.send(JSON.stringify({ type: 'response.create', response: { output_modalities: ['audio'] } }));
+      dc.send(JSON.stringify({ type: 'response.create' }));
     }
 
     if (data.status === 'won') {
@@ -157,11 +159,14 @@ export default function Home() {
           setPhase('speaking');
           break;
 
-        case 'response.audio_transcript.delta':
-          transcriptRef.current += (event.delta as string) || '';
-          setSpeakingText(transcriptRef.current);
+        case 'response.audio_transcript.delta': {
+          const delta = (event.delta as string) || '';
+          transcriptRef.current += delta;
+          // Pass only the new delta so mouth animation stays in sync with audio
+          setSpeakingText(delta);
           setBubble(transcriptRef.current);
           break;
+        }
 
         case 'response.audio_transcript.done':
           console.log('[realtime] 🐨 Kody said:', event.transcript);
@@ -170,7 +175,7 @@ export default function Home() {
           break;
 
         case 'response.audio.done':
-          setIsTalking(false);
+          setSpeakingText('');
           break;
 
         case 'response.done':
@@ -192,8 +197,7 @@ export default function Home() {
           break;
 
         default:
-          // Uncomment below to see all events:
-          // console.log('[realtime] event:', type, event);
+          //console.log('[realtime] event:', type, event);
           break;
       }
     };
@@ -202,6 +206,8 @@ export default function Home() {
   // ── Stop session ──────────────────────────────────────────────────────────
 
   const stopSession = useCallback(() => {
+    if (animFrameRef.current !== null) { cancelAnimationFrame(animFrameRef.current); animFrameRef.current = null; }
+    audioCtxRef.current?.close(); audioCtxRef.current = null;
     dcRef.current?.close();
     dcRef.current = null;
     pcRef.current?.getSenders().forEach((s) => s.track?.stop());
@@ -254,8 +260,30 @@ export default function Home() {
       };
 
       pc.ontrack = (e) => {
-        console.log('[realtime] 🔊 remote audio track');
+        console.log('[realtime] 🔊 remote audio track — wiring mouth animation');
         if (audioRef.current) audioRef.current.srcObject = e.streams[0];
+
+        // Drive mouth animation directly from audio amplitude
+        const ctx = new AudioContext();
+        audioCtxRef.current = ctx;
+        const analyser = ctx.createAnalyser();
+        analyser.fftSize = 256;
+        const source = ctx.createMediaStreamSource(e.streams[0]);
+        source.connect(analyser); // analyse only, don't connect to speakers (audio element handles playback)
+
+        const data = new Uint8Array(analyser.frequencyBinCount);
+        const tick = () => {
+          analyser.getByteFrequencyData(data);
+          const avg = data.reduce((a, b) => a + b, 0) / data.length;
+          if (avg > 8) {
+            setIsTalking(true);
+            setPhase('speaking');
+          } else {
+            setIsTalking(false);
+          }
+          animFrameRef.current = requestAnimationFrame(tick);
+        };
+        tick();
       };
 
       localStream.getTracks().forEach((t) => pc.addTrack(t, localStream));
@@ -266,14 +294,15 @@ export default function Home() {
 
       dc.addEventListener('message', (e) => onDataEventRef.current(JSON.parse(e.data)));
       dc.addEventListener('open', () => {
-        console.log('[realtime] data channel open — triggering greeting');
+        console.log('[realtime] data channel open — configuring audio + triggering greeting');
         processedToolCallsRef.current.clear();
         setPhase('thinking');
+
+        // Trigger greeting
         dc.send(JSON.stringify({
           type: 'response.create',
           response: {
-            output_modalities: ['audio'],
-            instructions: 'Start the kiosk experience now. Say "Hi, I am the Australia Post Koala", greet the child warmly, and offer exactly three choices: story, quiz, or chat.',
+            instructions: 'Say "Hi, I am the Australia Post Koala", greet the child warmly, and offer exactly three choices: story, quiz, or chat.',
           },
         }));
       });

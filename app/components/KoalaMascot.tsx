@@ -296,46 +296,51 @@ export default function KoalaMascot({
     if (!setMouthIndex) return;
 
     // Not speaking → rest position
-    if (!isSpeaking || !speakingText) {
+    if (!isSpeaking) {
       clearMouthTimeout();
       setMouthIndex(0);
       return;
     }
 
-    // Drive mouth shapes character by character
-    let index = 0;
-    const chars = speakingText.split('');
-    const baseSpeed = 85; // ms per char
+    // Speaking with text → character-by-character lip sync
+    if (speakingText) {
+      let index = 0;
+      const chars = speakingText.split('');
+      const baseSpeed = 85;
 
-    const animateNextChar = () => {
-      if (index >= chars.length) {
-        clearMouthTimeout();
-        setMouthIndex(0); // return to rest
-        return;
-      }
+      const animateNextChar = () => {
+        if (index >= chars.length) {
+          clearMouthTimeout();
+          return;
+        }
+        const char = chars[index];
+        setMouthIndex(charToMouthIndex(char));
+        index += 1;
 
-      const char = chars[index];
-      const mouthIdx = charToMouthIndex(char);
-      setMouthIndex(mouthIdx);
-      index += 1;
+        let nextDelay = baseSpeed;
+        if (char === '.' || char === '!' || char === '?') nextDelay = 280 + Math.random() * 120;
+        else if (char === ',') nextDelay = 160 + Math.random() * 60;
+        else if (char === ' ') nextDelay = 60 + Math.random() * 40;
+        else nextDelay = baseSpeed + (Math.random() * 30 - 15);
 
-      // Natural variation: longer pauses on punctuation
-      let nextDelay = baseSpeed;
-      if (char === '.' || char === '!' || char === '?') {
-        nextDelay = 280 + Math.random() * 120; // sentence end pause
-      } else if (char === ',') {
-        nextDelay = 160 + Math.random() * 60;  // comma pause
-      } else if (char === ' ') {
-        nextDelay = 60 + Math.random() * 40;   // quick on spaces
-      } else {
-        nextDelay = baseSpeed + (Math.random() * 30 - 15); // slight jitter
-      }
+        mouthTimeoutRef.current = window.setTimeout(animateNextChar, nextDelay);
+      };
 
-      mouthTimeoutRef.current = window.setTimeout(animateNextChar, nextDelay);
+      animateNextChar();
+      return () => { clearMouthTimeout(); };
+    }
+
+    // Speaking without text → generic talking animation (audio playing but no transcript yet)
+    const TALK_SHAPES = [3, 4, 2, 5, 3, 2, 4, 0, 3, 2];
+    let step = 0;
+
+    const animateGeneric = () => {
+      setMouthIndex(TALK_SHAPES[step % TALK_SHAPES.length]);
+      step += 1;
+      mouthTimeoutRef.current = window.setTimeout(animateGeneric, 110 + Math.random() * 60);
     };
 
-    animateNextChar();
-
+    animateGeneric();
     return () => {
       clearMouthTimeout();
       setMouthIndex(0);
