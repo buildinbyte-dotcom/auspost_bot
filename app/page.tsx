@@ -783,11 +783,11 @@ export default function Home() {
         />
       </div>
 
-      {/* ── Speech bubble ── */}
-      <SpeechBubble text={bubble} visible={!!bubble} />
+      {/* ── Speech bubble (only before user starts talking — keeps koala full size) ── */}
+      {!hasTalked && <SpeechBubble text={bubble} visible={!!bubble} />}
 
-      {/* ── Status text ── */}
-      {statusText && !bubble && (
+      {/* ── Status text (only before user starts talking) ── */}
+      {!hasTalked && statusText && !bubble && (
         <div className="status-container">
           <div className="status-bubble">
             <p className="status-text">{statusText}</p>
