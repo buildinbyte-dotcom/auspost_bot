@@ -350,22 +350,36 @@ export default function Home() {
     setPhase('idle');
   }, []);
 
-  // ── Idle timer ───────────────────────────────────────────────────────────────
+  // ── Idle engagement: spoken prompts to attract kids ────────────────────────
+
+  const IDLE_PROMPTS = [
+    "Hey there! Come say hi!",
+    "Psst! Want to hear an awesome story?",
+    "G'day mate! I'm Kody the Koala!",
+    "Hey! Tap the microphone and let's chat!",
+    "I've got some really cool stories to tell!",
+    "Hello! Want to go on an adventure with me?",
+    "Oi! Come over here, I've got a surprise!",
+    "Who wants to hear about a magical parcel?",
+    "Hi there! I'm waiting for a friend to talk to!",
+    "Crikey! Is anyone out there? Come say hello!",
+  ];
+
+  const idlePromptIndexRef = useRef(0);
 
   const armIdle = useCallback(() => {
     if (idleRef.current) clearTimeout(idleRef.current);
+    // Speak a random engagement prompt every 15-25 seconds
+    const delay = 15000 + Math.random() * 10000;
     idleRef.current = setTimeout(async () => {
       if (inStory) return;
-      const res = await fetch('/api/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ isIdle: true }),
-      });
-      const data = await res.json();
-      await kodySpeak(data.reply);
+      // Cycle through prompts so kids hear variety
+      const prompt = IDLE_PROMPTS[idlePromptIndexRef.current % IDLE_PROMPTS.length];
+      idlePromptIndexRef.current += 1;
+      await kodySpeak(prompt);
       setPhase('idle');
       armIdle();
-    }, 28_000);
+    }, delay);
   }, [inStory, kodySpeak]);
 
   // ── Boot greeting ────────────────────────────────────────────────────────────
