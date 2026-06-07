@@ -1,7 +1,17 @@
 'use client';
 
 import { useState, useCallback, useRef, useEffect } from 'react';
-import { KoalaAvatar, Emotion } from './components/KoalaAvatar';
+import dynamic from 'next/dynamic';
+
+// Lazy-load Rive mascot (WebGL2 requires browser APIs)
+const KoalaMascot = dynamic(() => import('./components/KoalaMascot'), {
+  ssr: false,
+  loading: () => (
+    <div className="mascot-loading">
+      <div className="mascot-loading-pulse" />
+    </div>
+  ),
+});
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -24,411 +34,550 @@ interface VoucherData {
   validAt: string;
 }
 
-interface ChatTurn { user: string; kody: string; }
+interface ChatTurn {
+  user: string;
+  kody: string;
+}
 
 // ── Story catalogue ──────────────────────────────────────────────────────────
 
 const STORIES: Record<string, string> = {
   magical_parcel: 'The Magical Parcel',
-  big_day_out:    "Kody's Big Day Out",
-  reef_mail:      'Reef Mail',
-  lost_star:      'The Star That Got Lost',
+  big_day_out: "Kody's Big Day Out",
+  reef_mail: 'Reef Mail',
+  lost_star: 'The Star That Got Lost',
 };
 
-// ── Greeting lines (spoken on mount) ─────────────────────────────────────────
+// ── Greetings ────────────────────────────────────────────────────────────────
 
 const GREETINGS = [
-  "G'day mate! I'm Kody the Koala! Tap the phone button and tell me which story you'd like — The Magical Parcel, Kody's Big Day Out, Reef Mail, or The Star That Got Lost!",
-  "Hello there! I'm Kody! Ready for an adventure? Tap the phone and tell me which story sounds the most fun!",
-  "Crikey, welcome! I'm Kody the Koala! Tap that phone button and pick an adventure — I've got four amazing stories for you!",
+  "G'day mate! I'm Kody the Koala! Tap the microphone and tell me which story you'd like — The Magical Parcel, Kody's Big Day Out, Reef Mail, or The Star That Got Lost!",
+  "Hello there! I'm Kody! Ready for an adventure? Tap the mic and tell me which story sounds the most fun!",
+  "Crikey, welcome! I'm Kody the Koala! Tap that microphone and pick an adventure — I've got four amazing stories for you!",
 ];
 
-// ── Confetti ──────────────────────────────────────────────────────────────────
+// ── Dev mode presets ─────────────────────────────────────────────────────────
 
-const CONFETTI = [
-  { color: '#FFD700', size: 14, left: '7%',  anim: 'animate-confetti-1' },
-  { color: '#FFFFFF', size: 10, left: '20%', anim: 'animate-confetti-2' },
-  { color: '#FFD700', size: 8,  left: '36%', anim: 'animate-confetti-3' },
-  { color: '#FFFFFF', size: 12, left: '50%', anim: 'animate-confetti-4' },
-  { color: '#FFD700', size: 9,  left: '64%', anim: 'animate-confetti-5' },
-  { color: '#FFFFFF', size: 14, left: '78%', anim: 'animate-confetti-6' },
-  { color: '#FFD700', size: 11, left: '88%', anim: 'animate-confetti-7' },
-  { color: '#FFFFFF', size: 8,  left: '14%', anim: 'animate-confetti-8' },
+const DEV_PRESETS = [
+  { label: '👋 Hi greeting', text: "Hi there! Welcome, mate!" },
+  { label: '📖 Short sentence', text: "Let's go on an adventure!" },
+  { label: '🗣️ Lip sync test', text: "A big open mouth. E wide. O round. MBP closed." },
+  { label: '🦘 Aussie paragraph', text: "G'day mate! Crikey, you won't believe what happened at the post office today! A magical sparkling parcel arrived, glowing with rainbow colours. Shall we open it together?" },
+  { label: '🎉 Celebration', text: "Woohoo! You did it, champion! That was absolutely brilliant! I'm so proud of you, mate!" },
+  { label: '❓ Question', text: "Hmm, interesting! Would you like Option A — explore the enchanted forest, or Option B — dive into the crystal cave?" },
+  { label: '🔤 All letters', text: "A B C D E F G H I J K L M N O P Q R S T U V W X Y Z" },
+  { label: '⏱️ Punctuation pauses', text: "Wait... really? Yes! Oh, wow. That is amazing, truly." },
 ];
-
-// ── Background: gold stars ────────────────────────────────────────────────────
-
-function Stars() {
-  const stars = [
-    { top: '4%',  left: '18%', s: 32, d: '0s',   o: 1 },
-    { top: '6%',  left: '68%', s: 28, d: '0.6s',  o: 0.9 },
-    { top: '16%', left: '8%',  s: 20, d: '1.2s',  o: 0.85 },
-    { top: '20%', left: '78%', s: 22, d: '0.3s',  o: 0.9 },
-    { top: '38%', left: '12%', s: 18, d: '0.9s',  o: 0.8 },
-    { top: '35%', left: '80%', s: 16, d: '1.5s',  o: 0.75 },
-    { top: '55%', left: '6%',  s: 14, d: '0.5s',  o: 0.7 },
-    { top: '58%', left: '85%', s: 20, d: '1.1s',  o: 0.8 },
-    { top: '72%', left: '14%', s: 24, d: '0.8s',  o: 0.85 },
-    { top: '70%', left: '74%', s: 18, d: '0.2s',  o: 0.8 },
-    { top: '85%', left: '28%', s: 16, d: '1.3s',  o: 0.7 },
-    { top: '88%', left: '60%', s: 22, d: '0.7s',  o: 0.85 },
-    { top: '50%', left: '48%', s: 12, d: '1.7s',  o: 0.6 },
-  ];
-  return (
-    <>
-      {stars.map((p, i) => (
-        <span key={i} className="absolute pointer-events-none select-none animate-twinkle"
-          style={{ top: p.top, left: p.left, fontSize: p.s, animationDelay: p.d, opacity: p.o,
-            color: '#FFD700', textShadow: '0 0 8px rgba(255,215,0,0.8), 0 0 20px rgba(255,215,0,0.4)', zIndex: 1 }}>
-          ✦
-        </span>
-      ))}
-    </>
-  );
-}
-
-// ── Christmas ornaments ───────────────────────────────────────────────────────
-
-function OrnamentBall({ size, color, stringH }: { size: number; color: string; stringH: number }) {
-  const lighten = (hex: string, a: number) => {
-    const n = parseInt(hex.slice(1), 16);
-    return `rgb(${Math.min(255,(n>>16)+a)},${Math.min(255,((n>>8)&0xff)+a)},${Math.min(255,(n&0xff)+a)})`;
-  };
-  const darken = (hex: string, a: number) => {
-    const n = parseInt(hex.slice(1), 16);
-    return `rgb(${Math.max(0,(n>>16)-a)},${Math.max(0,((n>>8)&0xff)-a)},${Math.max(0,(n&0xff)-a)})`;
-  };
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-      <div style={{ width: 2.5, height: stringH, background: 'linear-gradient(to bottom, rgba(255,255,255,0.7), rgba(255,255,255,0.25))' }} />
-      <div style={{ width: size*0.28, height: size*0.18, background: '#C8A000', borderRadius: '3px 3px 0 0', marginBottom: -1 }} />
-      <div style={{ width: size, height: size, borderRadius: '50%', position: 'relative',
-        background: `radial-gradient(circle at 35% 30%, ${lighten(color,30)}, ${color} 55%, ${darken(color,20)} 100%)`,
-        boxShadow: `inset -${size*0.2}px -${size*0.15}px ${size*0.35}px rgba(0,0,0,0.35), 0 4px 12px rgba(0,0,0,0.3)` }}>
-        <div style={{ position:'absolute', top:'12%', left:'18%', width:size*0.32, height:size*0.22,
-          borderRadius:'50%', background:'rgba(255,255,255,0.55)', filter:'blur(2px)' }} />
-      </div>
-    </div>
-  );
-}
-
-function Ornaments() {
-  const items = [
-    { top: '2%',  left: '0%',   size: 52, color: '#CC0000', string: 18, delay: '0s' },
-    { top: '14%', left: '-2%',  size: 38, color: '#AA0000', string: 22, delay: '0.6s' },
-    { top: '27%', left: '0%',   size: 44, color: '#DD1111', string: 16, delay: '1.1s' },
-    { top: '42%', left: '-1%',  size: 30, color: '#BB0000', string: 20, delay: '0.4s' },
-    { top: '2%',  left: '85%',  size: 46, color: '#CC0000', string: 20, delay: '0.3s' },
-    { top: '15%', left: '87%',  size: 36, color: '#AA0000', string: 18, delay: '0.9s' },
-    { top: '28%', left: '84%',  size: 50, color: '#DD1111', string: 14, delay: '0.7s' },
-    { top: '43%', left: '86%',  size: 32, color: '#BB0000', string: 22, delay: '1.3s' },
-  ];
-  return (
-    <>
-      {items.map((b, i) => (
-        <div key={i} className="absolute pointer-events-none select-none animate-float"
-          style={{ top: b.top, left: b.left, animationDelay: b.delay, zIndex: 2 }}>
-          <OrnamentBall size={b.size} color={b.color} stringH={b.string} />
-        </div>
-      ))}
-    </>
-  );
-}
-
-// ── AP Logo chip ──────────────────────────────────────────────────────────────
-
-function APLogo() {
-  return (
-    <div className="w-9 h-9 bg-white rounded-full flex items-center justify-center shadow-lg flex-shrink-0">
-      <span className="text-[#CC2128] font-extrabold text-sm">P</span>
-    </div>
-  );
-}
 
 // ── Speech synthesis ──────────────────────────────────────────────────────────
 
-function speak(text: string): Promise<void> {
+function speak(text: string, onStart?: () => void): Promise<void> {
   return new Promise((resolve) => {
     if (typeof window === 'undefined' || !('speechSynthesis' in window)) {
+      onStart?.();
       setTimeout(resolve, Math.min(text.length * 60, 6000));
       return;
     }
     window.speechSynthesis.cancel();
     const utterance = new SpeechSynthesisUtterance(text);
-    utterance.rate  = 0.88;
+    utterance.rate = 0.88;
     utterance.pitch = 1.15;
     utterance.volume = 1;
     const tryVoice = () => {
-      const v = window.speechSynthesis.getVoices()
-        .find(v => v.lang.startsWith('en') &&
-          (v.name.includes('Samantha') || v.name.includes('Karen') ||
-           v.name.includes('Daniel')   || v.name.includes('Google')));
+      const v = window.speechSynthesis
+        .getVoices()
+        .find(
+          (v) =>
+            v.lang.startsWith('en') &&
+            (v.name.includes('Samantha') ||
+              v.name.includes('Karen') ||
+              v.name.includes('Daniel') ||
+              v.name.includes('Google'))
+        );
       if (v) utterance.voice = v;
     };
-    window.speechSynthesis.getVoices().length ? tryVoice() : (window.speechSynthesis.onvoiceschanged = tryVoice);
+    window.speechSynthesis.getVoices().length
+      ? tryVoice()
+      : (window.speechSynthesis.onvoiceschanged = tryVoice);
     const t = setTimeout(resolve, text.length * 90 + 5000);
-    utterance.onend  = () => { clearTimeout(t); resolve(); };
-    utterance.onerror = () => { clearTimeout(t); resolve(); };
+    utterance.onstart = () => {
+      onStart?.();
+    };
+    utterance.onend = () => {
+      clearTimeout(t);
+      resolve();
+    };
+    utterance.onerror = () => {
+      clearTimeout(t);
+      resolve();
+    };
     setTimeout(() => window.speechSynthesis.speak(utterance), 80);
   });
 }
 
-// ── Phone button — the ONLY interaction ──────────────────────────────────────
+// ── (No floating elements needed — Rive artboard provides its own scene) ──
 
-interface PhoneButtonProps {
+// ── Confetti for voucher screen ───────────────────────────────────────────────
+
+const CONFETTI = [
+  { color: '#FFD700', size: 14, left: '7%', anim: 'animate-confetti-1' },
+  { color: '#FF6B9D', size: 10, left: '20%', anim: 'animate-confetti-2' },
+  { color: '#7C5CFC', size: 8, left: '36%', anim: 'animate-confetti-3' },
+  { color: '#00D4AA', size: 12, left: '50%', anim: 'animate-confetti-4' },
+  { color: '#FFD700', size: 9, left: '64%', anim: 'animate-confetti-5' },
+  { color: '#FF6B9D', size: 14, left: '78%', anim: 'animate-confetti-6' },
+  { color: '#7C5CFC', size: 11, left: '88%', anim: 'animate-confetti-7' },
+  { color: '#00D4AA', size: 8, left: '14%', anim: 'animate-confetti-8' },
+];
+
+// ── Microphone Button ─────────────────────────────────────────────────────────
+
+interface MicButtonProps {
   onTranscript: (text: string) => void;
   disabled: boolean;
+  phase: Phase;
 }
 
-function PhoneButton({ onTranscript, disabled }: PhoneButtonProps) {
+function MicButton({ onTranscript, disabled, phase }: MicButtonProps) {
   const [listening, setListening] = useState(false);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const recRef = useRef<any>(null);
 
   const toggle = useCallback(() => {
     if (disabled) return;
-    if (listening) { recRef.current?.stop(); return; }
+    if (listening) {
+      recRef.current?.stop();
+      return;
+    }
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const win = window as any;
     const SR = win.SpeechRecognition || win.webkitSpeechRecognition;
-    if (!SR) { alert('Voice not supported — please use Chrome or Safari.'); return; }
+    if (!SR) {
+      alert('Voice not supported — please use Chrome or Safari.');
+      return;
+    }
 
     const rec = new SR();
     rec.lang = 'en-AU';
     rec.interimResults = false;
     rec.maxAlternatives = 1;
     rec.continuous = false;
-    rec.onstart  = () => setListening(true);
+    rec.onstart = () => setListening(true);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     rec.onresult = (e: any) => {
       const t = e.results[0]?.[0]?.transcript?.trim();
       if (t) onTranscript(t);
     };
-    rec.onend   = () => { setListening(false); recRef.current = null; };
-    rec.onerror = () => { setListening(false); recRef.current = null; };
+    rec.onend = () => {
+      setListening(false);
+      recRef.current = null;
+    };
+    rec.onerror = () => {
+      setListening(false);
+      recRef.current = null;
+    };
     recRef.current = rec;
     rec.start();
   }, [disabled, listening, onTranscript]);
 
+  const isActive = listening;
+  const isBusy = phase === 'speaking' || phase === 'thinking';
+
   return (
-    <button
-      onClick={toggle}
-      disabled={disabled}
-      className={`
-        relative flex flex-col items-center justify-center rounded-full
-        shadow-2xl transition-all duration-200 select-none
-        ${listening ? 'scale-110 animate-pulse-ring' : disabled ? 'opacity-40 cursor-not-allowed' : 'active:scale-90 hover:scale-105'}
-      `}
-      style={{ width: 112, height: 112, background: listening ? '#FFFFFF' : 'rgba(255,255,255,0.95)' }}
-    >
-      <span style={{ fontSize: 46, lineHeight: 1 }}>{listening ? '🎙️' : '📞'}</span>
-      <span className={`text-xs font-bold mt-1 ${listening ? 'text-[#CC2128]' : 'text-gray-500'}`}>
-        {listening ? 'Listening…' : 'Tap to talk'}
-      </span>
-      {/* Outer ring */}
-      <div className="absolute inset-0 rounded-full border-4 border-white/40" />
-    </button>
+    <div className="mic-container">
+      {/* Pulse rings when idle */}
+      {phase === 'idle' && !listening && (
+        <>
+          <div className="mic-pulse-ring mic-pulse-ring-1" />
+          <div className="mic-pulse-ring mic-pulse-ring-2" />
+        </>
+      )}
+
+      {/* Sound waves when listening */}
+      {isActive && (
+        <div className="mic-waves">
+          <div className="mic-wave mic-wave-1" />
+          <div className="mic-wave mic-wave-2" />
+          <div className="mic-wave mic-wave-3" />
+        </div>
+      )}
+
+      <button
+        id="mic-button"
+        onClick={toggle}
+        disabled={disabled}
+        className={`mic-button ${isActive ? 'mic-active' : ''} ${disabled ? 'mic-disabled' : ''}`}
+        aria-label={isActive ? 'Stop listening' : 'Start talking to Kody'}
+      >
+        <span className="mic-icon">
+          {isActive ? '🎤' : isBusy ? '⏳' : '🎤'}
+        </span>
+      </button>
+
+      <p className="mic-label">
+        {isActive
+          ? '🎧 Listening to you…'
+          : phase === 'speaking'
+            ? '🔊 Kody is talking…'
+            : phase === 'thinking'
+              ? '🤔 Kody is thinking…'
+              : phase === 'booting'
+                ? '✨ Waking up…'
+                : 'Tap to talk to Kody!'}
+      </p>
+    </div>
   );
 }
 
-// ── Main app ──────────────────────────────────────────────────────────────────
+// ── Speech Bubble ─────────────────────────────────────────────────────────────
+
+function SpeechBubble({ text, visible }: { text: string; visible: boolean }) {
+  if (!visible || !text) return null;
+  return (
+    <div className="speech-bubble-container animate-slide-up">
+      <div className="speech-bubble">
+        <div className="speech-bubble-tail" />
+        <p className="speech-bubble-text">{text}</p>
+      </div>
+    </div>
+  );
+}
+
+// ── Thinking Indicator ────────────────────────────────────────────────────────
+
+function ThinkingDots() {
+  return (
+    <div className="thinking-container">
+      <div className="thinking-bubble">
+        <span className="thinking-label">Kody is thinking</span>
+        <span className="thinking-dot animate-dot-1" />
+        <span className="thinking-dot animate-dot-2" />
+        <span className="thinking-dot animate-dot-3" />
+      </div>
+    </div>
+  );
+}
+
+// ── Dev Mode Panel ────────────────────────────────────────────────────────────
+
+interface DevPanelProps {
+  onPlay: (text: string) => void;
+  onStop: () => void;
+  isSpeaking: boolean;
+}
+
+function DevPanel({ onPlay, onStop, isSpeaking }: DevPanelProps) {
+  return (
+    <div className="dev-panel">
+      <p className="dev-panel-title">🧪 Dev Mode — Lip Sync Presets</p>
+      <div className="dev-presets">
+        {DEV_PRESETS.map((preset, i) => (
+          <button
+            key={i}
+            className="dev-preset-btn"
+            onClick={() => onPlay(preset.text)}
+            disabled={isSpeaking}
+          >
+            {preset.label}
+          </button>
+        ))}
+        <button
+          className="dev-preset-btn dev-stop-btn"
+          onClick={onStop}
+        >
+          ⏹ Stop
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ── Main App ──────────────────────────────────────────────────────────────────
 
 export default function Home() {
-  const [phase, setPhase]                     = useState<Phase>('booting');
-  const [emotion, setEmotion]                 = useState<Emotion>('cheering');
-  const [isTalking, setIsTalking]             = useState(false);
-  const [bubble, setBubble]                   = useState('');
-  const [statusText, setStatusText]           = useState('');
-  const [storyId, setStoryId]                 = useState('');
-  const [storyTitle, setStoryTitle]           = useState('');
-  const [storyHistory, setStoryHistory]       = useState<Array<{ narration: string; choice: string }>>([]);
-  const [pendingChoices, setPendingChoices]   = useState<string[]>([]);
-  const [inStory, setInStory]                 = useState(false);
-  const [chatHistory, setChatHistory]         = useState<ChatTurn[]>([]);
-  const [voucher, setVoucher]                 = useState<VoucherData | null>(null);
-  const [showVoucher, setShowVoucher]         = useState(false);
-  const idleRef                               = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [phase, setPhase] = useState<Phase>('booting');
+  const [isTalking, setIsTalking] = useState(false);
+  const [speakingText, setSpeakingText] = useState('');
+  const [bubble, setBubble] = useState('');
+  const [statusText, setStatusText] = useState('');
+  const [storyId, setStoryId] = useState('');
+  const [storyTitle, setStoryTitle] = useState('');
+  const [storyHistory, setStoryHistory] = useState<
+    Array<{ narration: string; choice: string }>
+  >([]);
+  const [pendingChoices, setPendingChoices] = useState<string[]>([]);
+  const [inStory, setInStory] = useState(false);
+  const [chatHistory, setChatHistory] = useState<ChatTurn[]>([]);
+  const [voucher, setVoucher] = useState<VoucherData | null>(null);
+  const [showVoucher, setShowVoucher] = useState(false);
+  const [devMode, setDevMode] = useState(false);
+  const idleRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // ── Kody speaks ─────────────────────────────────────────────────────────────
-  const kodySpeak = useCallback(async (text: string, em: Emotion = 'happy') => {
+
+  const kodySpeak = useCallback(async (text: string) => {
     setPhase('speaking');
-    setEmotion(em);
-    setIsTalking(true);
+    setSpeakingText(text);
     setBubble(text);
-    await speak(text);
+    // Lip sync starts only when browser actually begins audio output
+    await speak(text, () => setIsTalking(true));
     setIsTalking(false);
+    setSpeakingText('');
+  }, []);
+
+  // ── Dev mode: play preset (lip-sync only, with TTS) ──────────────────────
+
+  const devPlay = useCallback(async (text: string) => {
+    // Cancel anything in progress
+    if (typeof window !== 'undefined') window.speechSynthesis?.cancel();
+    setSpeakingText(text);
+    setBubble(text);
+    setPhase('speaking');
+    // Lip sync starts only when browser actually begins audio output
+    await speak(text, () => setIsTalking(true));
+    setIsTalking(false);
+    setSpeakingText('');
+    setBubble('');
+    setPhase('idle');
+  }, []);
+
+  const devStop = useCallback(() => {
+    if (typeof window !== 'undefined') window.speechSynthesis?.cancel();
+    setIsTalking(false);
+    setSpeakingText('');
+    setBubble('');
+    setPhase('idle');
   }, []);
 
   // ── Idle timer ───────────────────────────────────────────────────────────────
+
   const armIdle = useCallback(() => {
     if (idleRef.current) clearTimeout(idleRef.current);
     idleRef.current = setTimeout(async () => {
       if (inStory) return;
-      const res  = await fetch('/api/chat', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ isIdle: true }) });
+      const res = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ isIdle: true }),
+      });
       const data = await res.json();
-      await kodySpeak(data.reply, 'happy');
+      await kodySpeak(data.reply);
       setPhase('idle');
       armIdle();
     }, 28_000);
   }, [inStory, kodySpeak]);
 
   // ── Boot greeting ────────────────────────────────────────────────────────────
+
   useEffect(() => {
     const greeting = GREETINGS[Math.floor(Math.random() * GREETINGS.length)];
     const t = setTimeout(async () => {
-      await kodySpeak(greeting, 'cheering');
+      await kodySpeak(greeting);
       setPhase('idle');
       armIdle();
-    }, 800);
+    }, 1200);
     return () => clearTimeout(t);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // ── Story: narrate a segment ─────────────────────────────────────────────────
-  const narrateSegment = useCallback(async (
-    sid: string,
-    history: Array<{ narration: string; choice: string }>,
-    choice: string | null,
-    title: string
-  ) => {
-    setPhase('thinking');
-    setEmotion('thinking');
-    setBubble('');
-    setStatusText('Kody is imagining…');
 
-    const res = await fetch('/api/story', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ storyId: sid, history, choice }),
-    });
-
-    if (!res.ok) {
-      await kodySpeak("Oops! I need a magic key to tell stories. Check the setup, mate!", 'surprised');
-      setPhase('idle');
-      setStatusText('');
-      return;
-    }
-
-    const data: StorySegment = await res.json();
-    setStatusText('');
-
-    // Speak the narration
-    await kodySpeak(data.narration, (data.emotion as Emotion) || 'happy');
-
-    if (data.storyComplete) {
-      // Celebrate + voucher
-      setEmotion('cheering');
-      setIsTalking(true);
-      setBubble('Woohoo! You finished the story! Here is a special Kody reward just for you!');
-      await speak('Woohoo! You finished the story! Here is a special Kody reward just for you!');
-      setIsTalking(false);
-
-      const vRes  = await fetch('/api/voucher', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ storyTitle: title }) });
-      const vData: VoucherData = await vRes.json();
-      setVoucher(vData);
-      setShowVoucher(true);
-      setInStory(false);
+  const narrateSegment = useCallback(
+    async (
+      sid: string,
+      history: Array<{ narration: string; choice: string }>,
+      choice: string | null,
+      title: string
+    ) => {
+      setPhase('thinking');
       setBubble('');
-      setPhase('idle');
-    } else if (data.choices?.length > 0) {
-      // Read choices aloud, then wait for voice input
-      setPendingChoices(data.choices);
-      const choiceText = `You have two choices! Option A: ${data.choices[0]}. Or Option B: ${data.choices[1]}. Tap the phone and tell me which you'd like!`;
-      await kodySpeak(choiceText, 'happy');
-      setPhase('idle');
-      setStatusText('Tap 📞 and say your choice!');
-    } else {
-      setPhase('idle');
-      setStatusText('Tap 📞 to continue…');
-    }
-  }, [kodySpeak]);
+      setStatusText('Kody is imagining…');
+
+      const res = await fetch('/api/story', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ storyId: sid, history, choice }),
+      });
+
+      if (!res.ok) {
+        await kodySpeak(
+          "Oops! I need a magic key to tell stories. Check the setup, mate!"
+        );
+        setPhase('idle');
+        setStatusText('');
+        return;
+      }
+
+      const data: StorySegment = await res.json();
+      setStatusText('');
+
+      await kodySpeak(data.narration);
+
+      if (data.storyComplete) {
+        setSpeakingText(
+          'Woohoo! You finished the story! Here is a special Kody reward just for you!'
+        );
+        setBubble(
+          'Woohoo! You finished the story! Here is a special Kody reward just for you!'
+        );
+        await speak(
+          'Woohoo! You finished the story! Here is a special Kody reward just for you!',
+          () => setIsTalking(true)
+        );
+        setIsTalking(false);
+        setSpeakingText('');
+
+        const vRes = await fetch('/api/voucher', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ storyTitle: title }),
+        });
+        const vData: VoucherData = await vRes.json();
+        setVoucher(vData);
+        setShowVoucher(true);
+        setInStory(false);
+        setBubble('');
+        setPhase('idle');
+      } else if (data.choices?.length > 0) {
+        setPendingChoices(data.choices);
+        const choiceText = `You have two choices! Option A: ${data.choices[0]}. Or Option B: ${data.choices[1]}. Tap the microphone and tell me which you'd like!`;
+        await kodySpeak(choiceText);
+        setPhase('idle');
+        setStatusText('Tap 🎤 and say your choice!');
+      } else {
+        setPhase('idle');
+        setStatusText('Tap 🎤 to continue…');
+      }
+    },
+    [kodySpeak]
+  );
 
   // ── Start a story ─────────────────────────────────────────────────────────────
-  const startStory = useCallback(async (sid: string) => {
-    if (idleRef.current) clearTimeout(idleRef.current);
-    const title = STORIES[sid] || 'Kody\'s Story';
-    setStoryId(sid);
-    setStoryTitle(title);
-    setStoryHistory([]);
-    setPendingChoices([]);
-    setInStory(true);
-    await narrateSegment(sid, [], null, title);
-  }, [narrateSegment]);
+
+  const startStory = useCallback(
+    async (sid: string) => {
+      if (idleRef.current) clearTimeout(idleRef.current);
+      const title = STORIES[sid] || "Kody's Story";
+      setStoryId(sid);
+      setStoryTitle(title);
+      setStoryHistory([]);
+      setPendingChoices([]);
+      setInStory(true);
+      await narrateSegment(sid, [], null, title);
+    },
+    [narrateSegment]
+  );
 
   // ── Voice input handler ───────────────────────────────────────────────────────
-  const handleVoice = useCallback(async (transcript: string) => {
-    if (phase === 'listening' || phase === 'thinking' || phase === 'speaking') return;
-    if (idleRef.current) clearTimeout(idleRef.current);
 
-    setPhase('thinking');
-    setEmotion('thinking');
-    setStatusText(`You said: "${transcript}"`);
-    setBubble('');
+  const handleVoice = useCallback(
+    async (transcript: string) => {
+      if (
+        phase === 'listening' ||
+        phase === 'thinking' ||
+        phase === 'speaking'
+      )
+        return;
+      if (idleRef.current) clearTimeout(idleRef.current);
 
-    // ── In story: match a choice ───────────────────────────────────────────────
-    if (inStory && pendingChoices.length > 0) {
-      const lower = transcript.toLowerCase();
-      const [choiceA, choiceB] = pendingChoices;
+      setPhase('thinking');
+      setStatusText(`You said: "${transcript}"`);
+      setBubble('');
 
-      const aWords = (choiceA || '').toLowerCase().split(/\s+/).filter(w => w.length > 3);
-      const bWords = (choiceB || '').toLowerCase().split(/\s+/).filter(w => w.length > 3);
-      const aScore = aWords.filter(w => lower.includes(w)).length;
-      const bScore = bWords.filter(w => lower.includes(w)).length;
-      const pickA  = /\ba\b|first|option a|one/i.test(lower) || aScore > bScore;
-      const pickB  = /\bb\b|second|option b|two/i.test(lower) || bScore > aScore;
+      // ── In story: match a choice ────────────────────────────────────────────
+      if (inStory && pendingChoices.length > 0) {
+        const lower = transcript.toLowerCase();
+        const [choiceA, choiceB] = pendingChoices;
 
-      if (pickA && choiceA) {
-        setPendingChoices([]);
-        setStatusText('');
-        const newHistory = [...storyHistory, { narration: '', choice: choiceA }];
-        setStoryHistory(newHistory);
-        await narrateSegment(storyId, newHistory, choiceA, storyTitle);
-      } else if (pickB && choiceB) {
-        setPendingChoices([]);
-        setStatusText('');
-        const newHistory = [...storyHistory, { narration: '', choice: choiceB }];
-        setStoryHistory(newHistory);
-        await narrateSegment(storyId, newHistory, choiceB, storyTitle);
-      } else {
-        // Couldn't match — ask again
-        await kodySpeak(`Hmm, I heard "${transcript}" — did you mean option A or option B, mate?`, 'surprised');
-        setStatusText('Tap 📞 and say A or B!');
-        setPhase('idle');
+        const aWords = (choiceA || '')
+          .toLowerCase()
+          .split(/\s+/)
+          .filter((w) => w.length > 3);
+        const bWords = (choiceB || '')
+          .toLowerCase()
+          .split(/\s+/)
+          .filter((w) => w.length > 3);
+        const aScore = aWords.filter((w) => lower.includes(w)).length;
+        const bScore = bWords.filter((w) => lower.includes(w)).length;
+        const pickA =
+          /\ba\b|first|option a|one/i.test(lower) || aScore > bScore;
+        const pickB =
+          /\bb\b|second|option b|two/i.test(lower) || bScore > aScore;
+
+        if (pickA && choiceA) {
+          setPendingChoices([]);
+          setStatusText('');
+          const newHistory = [
+            ...storyHistory,
+            { narration: '', choice: choiceA },
+          ];
+          setStoryHistory(newHistory);
+          await narrateSegment(storyId, newHistory, choiceA, storyTitle);
+        } else if (pickB && choiceB) {
+          setPendingChoices([]);
+          setStatusText('');
+          const newHistory = [
+            ...storyHistory,
+            { narration: '', choice: choiceB },
+          ];
+          setStoryHistory(newHistory);
+          await narrateSegment(storyId, newHistory, choiceB, storyTitle);
+        } else {
+          await kodySpeak(
+            `Hmm, I heard "${transcript}" — did you mean option A or option B, mate?`
+          );
+          setStatusText('Tap 🎤 and say A or B!');
+          setPhase('idle');
+        }
+        armIdle();
+        return;
       }
-      armIdle();
-      return;
-    }
 
-    // ── Not in story: chat with Kody / pick a story ────────────────────────────
-    const res  = await fetch('/api/chat', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message: transcript, context: chatHistory }),
-    });
-    const data = await res.json();
+      // ── Not in story: chat or pick story ────────────────────────────────────
+      const res = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: transcript, context: chatHistory }),
+      });
+      const data = await res.json();
 
-    const newTurn: ChatTurn = { user: transcript, kody: data.reply };
-    setChatHistory(h => [...h, newTurn]);
+      const newTurn: ChatTurn = { user: transcript, kody: data.reply };
+      setChatHistory((h) => [...h, newTurn]);
 
-    await kodySpeak(data.reply, (data.emotion as Emotion) || 'happy');
-    setStatusText('');
+      await kodySpeak(data.reply);
+      setStatusText('');
 
-    if (data.action === 'start_story' && data.storyId) {
-      await startStory(data.storyId as string);
-    } else {
-      setPhase('idle');
-      armIdle();
-    }
-  }, [phase, inStory, pendingChoices, storyHistory, storyId, storyTitle, chatHistory, narrateSegment, kodySpeak, startStory, armIdle]);
+      if (data.action === 'start_story' && data.storyId) {
+        await startStory(data.storyId as string);
+      } else {
+        setPhase('idle');
+        armIdle();
+      }
+    },
+    [
+      phase,
+      inStory,
+      pendingChoices,
+      storyHistory,
+      storyId,
+      storyTitle,
+      chatHistory,
+      narrateSegment,
+      kodySpeak,
+      startStory,
+      armIdle,
+    ]
+  );
 
   // ── Reset ────────────────────────────────────────────────────────────────────
+
   const reset = useCallback(async () => {
     if (typeof window !== 'undefined') window.speechSynthesis?.cancel();
     if (idleRef.current) clearTimeout(idleRef.current);
     setPhase('booting');
-    setEmotion('cheering');
     setIsTalking(false);
+    setSpeakingText('');
     setBubble('');
     setStatusText('');
     setStoryId('');
@@ -442,7 +591,7 @@ export default function Home() {
 
     const greeting = GREETINGS[Math.floor(Math.random() * GREETINGS.length)];
     setTimeout(async () => {
-      await kodySpeak(greeting, 'cheering');
+      await kodySpeak(greeting);
       setPhase('idle');
       armIdle();
     }, 400);
@@ -454,76 +603,85 @@ export default function Home() {
 
   if (showVoucher && voucher) {
     return (
-      <div className="h-screen flex flex-col select-none overflow-hidden relative"
-        style={{ background: 'radial-gradient(ellipse at 50% 40%, #E02530 0%, #CC2128 45%, #A01B21 100%)' }}>
+      <div className="app-screen voucher-screen">
         {CONFETTI.map((c, i) => (
-          <div key={i} className={`absolute top-0 rounded-full ${c.anim}`}
-            style={{ left: c.left, width: c.size, height: c.size, backgroundColor: c.color }} />
+          <div
+            key={i}
+            className={`confetti-piece ${c.anim}`}
+            style={{
+              left: c.left,
+              width: c.size,
+              height: c.size,
+              backgroundColor: c.color,
+            }}
+          />
         ))}
-        <Stars />
 
-        {/* Header */}
-        <div className="flex-shrink-0 flex items-center justify-between px-5 pt-5 z-10">
-          <div className="flex items-center gap-2">
-            <APLogo />
-            <span className="text-white font-extrabold text-base">Australia Post</span>
+        <div className="voucher-header">
+          <div className="brand-badge">
+            <span className="brand-letter">P</span>
           </div>
-          <button onClick={reset}
-            className="text-white/70 text-sm font-medium bg-white/10 rounded-full px-3 py-1 active:scale-95">
+          <span className="brand-name">Australia Post</span>
+          <button onClick={reset} className="voucher-reset-btn">
             ↩ Again
           </button>
         </div>
 
-        {/* Kody celebrating */}
-        <div className="flex-shrink-0 flex flex-col items-center z-10 pt-2">
-          <div style={{ height: '26vh', aspectRatio: '300/540', maxHeight: 220 }}>
-            <KoalaAvatar emotion="cheering" isTalking={false} className="w-full h-full" />
-          </div>
-          <h1 className="text-white text-3xl font-extrabold text-center mt-1 drop-shadow-lg">🎉 You did it!</h1>
-          <p className="text-red-100 text-sm text-center">Amazing story explorer!</p>
+        <div className="voucher-mascot">
+          <KoalaMascot
+            isSpeaking={false}
+            speakingText=""
+            className="voucher-mascot-canvas"
+          />
         </div>
 
-        {/* Voucher card */}
-        <div className="flex-1 px-5 pt-3 pb-2 z-10 overflow-auto">
-          <div className="w-full bg-white rounded-3xl shadow-2xl overflow-hidden animate-pop-in">
-            <div className="bg-[#CC2128] px-5 py-3 flex items-center gap-3">
-              <APLogo />
+        <h1 className="voucher-title">🎉 You did it!</h1>
+        <p className="voucher-subtitle">Amazing story explorer!</p>
+
+        <div className="voucher-card-wrapper">
+          <div className="voucher-card animate-pop-in">
+            <div className="voucher-card-header">
+              <div className="brand-badge-small">
+                <span className="brand-letter-small">P</span>
+              </div>
               <div>
-                <div className="text-white font-extrabold text-sm">Kody Storyteller Reward</div>
-                <div className="text-red-200 text-xs">Exclusive in-store reward</div>
+                <div className="voucher-card-title">
+                  Kody Storyteller Reward
+                </div>
+                <div className="voucher-card-sub">
+                  Exclusive in-store reward
+                </div>
               </div>
             </div>
-            <div className="px-6 py-5">
-              <div className="text-6xl text-center mb-3">{voucher.icon}</div>
-              <div className="text-gray-900 font-extrabold text-xl text-center mb-1">{voucher.reward}</div>
-              <p className="text-gray-500 text-sm text-center mb-5">{voucher.description}</p>
-              <div className="bg-gray-50 border-2 border-dashed border-[#CC2128] rounded-2xl py-4 text-center mb-4">
-                <p className="text-gray-400 text-xs uppercase tracking-widest mb-1">Voucher Code</p>
-                <p className="text-[#CC2128] font-mono font-extrabold text-3xl tracking-widest">{voucher.code}</p>
+            <div className="voucher-card-body">
+              <div className="voucher-icon">{voucher.icon}</div>
+              <div className="voucher-reward">{voucher.reward}</div>
+              <p className="voucher-description">{voucher.description}</p>
+              <div className="voucher-code-box">
+                <p className="voucher-code-label">Voucher Code</p>
+                <p className="voucher-code">{voucher.code}</p>
               </div>
-              <div className="flex items-center gap-2 bg-yellow-50 rounded-xl px-4 py-2 mb-3">
-                <span className="text-yellow-500">📖</span>
-                <span className="text-gray-600 text-xs">Completed: <strong>{voucher.storyTitle}</strong></span>
+              <div className="voucher-story-badge">
+                <span>📖</span>
+                <span>
+                  Completed: <strong>{voucher.storyTitle}</strong>
+                </span>
               </div>
-              <div className="flex justify-between text-xs text-gray-400">
+              <div className="voucher-meta">
                 <span>{voucher.validAt}</span>
                 <span>Expires {voucher.expiryDate}</span>
               </div>
             </div>
-            <div className="bg-[#CC2128]/10 px-6 py-3 text-center border-t border-gray-100">
-              <p className="text-[#CC2128] font-bold text-sm">
-                📍 Show this to our team at the counter to claim!
-              </p>
+            <div className="voucher-card-footer">
+              <p>📍 Show this to our team at the counter to claim!</p>
             </div>
           </div>
         </div>
 
-        {/* Play again — phone button style */}
-        <div className="flex-shrink-0 flex flex-col items-center pb-8 pt-3 z-10 gap-2">
-          <button onClick={reset}
-            className="w-20 h-20 bg-white rounded-full flex flex-col items-center justify-center shadow-2xl active:scale-90 transition-transform">
-            <span style={{ fontSize: 34 }}>🔄</span>
-            <span className="text-[#CC2128] text-xs font-bold mt-0.5">Play again</span>
+        <div className="voucher-play-again">
+          <button onClick={reset} className="play-again-btn">
+            <span className="play-again-icon">🔄</span>
+            <span className="play-again-text">Play again</span>
           </button>
         </div>
       </div>
@@ -531,94 +689,94 @@ export default function Home() {
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // MAIN KIOSK SCREEN — voice-only
+  // MAIN SCREEN — Voice chat with Kody
   // ═══════════════════════════════════════════════════════════════════════════
 
-  const phoneDisabled = phase === 'speaking' || phase === 'thinking' || phase === 'booting';
+  const micDisabled =
+    phase === 'speaking' || phase === 'thinking' || phase === 'booting';
 
   return (
-    <div className="h-screen flex flex-col select-none overflow-hidden relative"
-      style={{ background: 'radial-gradient(ellipse at 50% 40%, #E02530 0%, #CC2128 45%, #A01B21 100%)' }}>
+    <div className="app-screen main-screen">
 
-      <Stars />
-      <Ornaments />
+      {/* ── Dev Mode Toggle ── */}
+      <button
+        className={`dev-toggle ${devMode ? 'dev-toggle-active' : ''}`}
+        onClick={() => setDevMode((d) => !d)}
+      >
+        {devMode ? '🧪 Dev ON' : 'Dev'}
+      </button>
 
-      {/* Top bar — AP logo only */}
-      <div className="flex-shrink-0 flex items-center justify-between px-5 pt-5 z-10">
-        <div className="flex items-center gap-2">
-          <APLogo />
-          <div>
-            <div className="text-white font-extrabold text-sm leading-none">Australia Post</div>
-            <div className="text-white/60 text-xs">Story Time with Kody</div>
+      {/* ── Header ── */}
+      <header className="app-header">
+        <div className="header-brand">
+          <div className="brand-badge">
+            <span className="brand-letter">P</span>
+          </div>
+          <div className="header-brand-text">
+            <span className="header-title">Australia Post</span>
+            <span className="header-subtitle">Story Time with Kody</span>
           </div>
         </div>
-        {/* Story progress dots — visible during story */}
+
+        {/* Story progress */}
         {inStory && (
-          <div className="flex gap-1.5">
-            {[0,1,2,3,4].map(i => (
-              <div key={i} className={`w-2 h-2 rounded-full transition-all ${
-                i < storyHistory.length ? 'bg-[#FFD700] scale-125' : 'bg-white/30'}`} />
+          <div className="story-progress">
+            {[0, 1, 2, 3, 4].map((i) => (
+              <div
+                key={i}
+                className={`progress-dot ${i < storyHistory.length ? 'progress-dot-filled' : ''}`}
+              />
             ))}
           </div>
         )}
-        {/* Home reset — subtle */}
-        <button onClick={reset} className="text-white/40 text-xs active:text-white/80 transition-colors">
+
+        <button onClick={reset} className="reset-btn" aria-label="Reset">
           ↩
         </button>
+      </header>
+
+      {/* ── Mascot area ── */}
+      <div className="mascot-area">
+        <div className="mascot-glow" />
+        <KoalaMascot
+          isSpeaking={isTalking}
+          speakingText={speakingText}
+          className="mascot-canvas"
+        />
       </div>
 
-      {/* Kody — large hero */}
-      <div className="flex-1 flex justify-center items-end z-10 px-6 pb-2 min-h-0">
-        <div style={{ height: '100%', aspectRatio: '300/540', maxHeight: 460, maxWidth: 260 }}>
-          <KoalaAvatar emotion={emotion} isTalking={isTalking} className="w-full h-full" />
-        </div>
-      </div>
+      {/* ── Speech bubble ── */}
+      <SpeechBubble text={bubble} visible={!!bubble} />
 
-      {/* Speech bubble */}
-      {bubble && (
-        <div className="flex-shrink-0 mx-5 mb-3 z-10 animate-slide-up">
-          <div className="bg-white rounded-3xl rounded-bl-none px-6 py-4 shadow-2xl">
-            <p className="text-gray-800 text-base leading-relaxed font-semibold">{bubble}</p>
-          </div>
-        </div>
-      )}
-
-      {/* Status / hint text */}
+      {/* ── Status text ── */}
       {statusText && !bubble && (
-        <div className="flex-shrink-0 mx-5 mb-3 z-10">
-          <div className="bg-white/15 rounded-2xl px-5 py-3 text-center">
-            <p className="text-white/90 text-sm font-medium">{statusText}</p>
+        <div className="status-container">
+          <div className="status-bubble">
+            <p className="status-text">{statusText}</p>
           </div>
         </div>
       )}
 
-      {/* Loading dots */}
-      {phase === 'thinking' && !bubble && !statusText && (
-        <div className="flex-shrink-0 flex justify-center mb-4 z-10">
-          <div className="bg-white/20 rounded-2xl px-6 py-3 flex items-center gap-2">
-            <span className="text-white/80 text-sm">Kody is thinking</span>
-            <span className="w-2.5 h-2.5 bg-white rounded-full animate-dot-1" />
-            <span className="w-2.5 h-2.5 bg-white rounded-full animate-dot-2" />
-            <span className="w-2.5 h-2.5 bg-white rounded-full animate-dot-3" />
-          </div>
-        </div>
-      )}
+      {/* ── Thinking dots ── */}
+      {phase === 'thinking' && !bubble && !statusText && <ThinkingDots />}
 
-      {/* ── PHONE BUTTON — the ONLY interaction ── */}
-      <div className="flex-shrink-0 flex flex-col items-center pb-10 z-10 gap-3">
-        <PhoneButton onTranscript={handleVoice} disabled={phoneDisabled} />
-        {phase === 'idle' && !bubble && (
-          <p className="text-white/55 text-xs text-center">
-            {inStory ? 'Speak your choice' : "Say a story name to begin!"}
-          </p>
-        )}
-        {phase === 'speaking' && (
-          <p className="text-white/55 text-xs text-center">🎧 Kody is speaking…</p>
-        )}
-        {phase === 'booting' && (
-          <p className="text-white/55 text-xs text-center">Starting up…</p>
-        )}
+      {/* ── Microphone ── */}
+      <div className="mic-area">
+        <MicButton
+          onTranscript={handleVoice}
+          disabled={micDisabled}
+          phase={phase}
+        />
       </div>
+
+      {/* ── Dev Mode Panel ── */}
+      {devMode && (
+        <DevPanel
+          onPlay={devPlay}
+          onStop={devStop}
+          isSpeaking={isTalking}
+        />
+      )}
     </div>
   );
 }
