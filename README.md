@@ -18,6 +18,20 @@ Open [http://localhost:3000](http://localhost:3000) with your browser to see the
 
 You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
 
+## OpenAI voice prototype
+
+There is a smaller OpenAI Realtime voice-chat prototype at [http://localhost:3000/voice](http://localhost:3000/voice).
+
+Set these values in `.env.local` before starting the dev server:
+
+```bash
+OPENAI_API_KEY=replace-me-with-your-openai-api-key
+OPENAI_REALTIME_MODEL=gpt-realtime
+OPENAI_REALTIME_VOICE=marin
+```
+
+The browser connects to OpenAI with WebRTC, so the OpenAI API key stays on the Next.js server. The page keeps a visible transcript window for the last five minutes while the Realtime session handles voice input and voice output.
+
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
 
 ## Learn More
