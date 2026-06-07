@@ -314,6 +314,21 @@ export default function Home() {
   const [devMode, setDevMode] = useState(false);
   const idleRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // ── Talk-time tracking for voucher eligibility ─────────────────────────────
+  const talkStartRef = useRef<number | null>(null);
+  const [totalTalkTime, setTotalTalkTime] = useState(0); // seconds
+  const [hasTalked, setHasTalked] = useState(false);
+  const VOUCHER_THRESHOLD = 60; // 1 minute in seconds
+
+  const VOUCHER_REJECTIONS = [
+    "Haha, nice try mate! But you gotta chat with me first! Tap the mic and let's talk!",
+    "Oi! You haven't even said hello yet! Come on, tap the microphone and let's be friends first!",
+    "Whoa there, speedy! You need to have a proper yarn with me before you get a prize!",
+    "Ha! You think vouchers grow on eucalyptus trees? Talk to me for a bit first, mate!",
+    "Not so fast, champion! I need to get to know you first! Tap the mic and tell me something!",
+    "Hmm, I don't remember chatting with you yet! Give me a tap on the mic and let's have some fun first!",
+  ];
+
   // ── Kody speaks ─────────────────────────────────────────────────────────────
 
   const kodySpeak = useCallback(async (text: string) => {
@@ -494,6 +509,15 @@ export default function Home() {
       )
         return;
       if (idleRef.current) clearTimeout(idleRef.current);
+
+      // Track talk time
+      if (!hasTalked) setHasTalked(true);
+      if (talkStartRef.current === null) {
+        talkStartRef.current = Date.now();
+      }
+      // Accumulate based on transcript length (~3 words/sec estimate + response time)
+      const estimatedSpeechSec = Math.max(transcript.split(/\s+/).length / 2.5, 2);
+      setTotalTalkTime((prev) => prev + estimatedSpeechSec + 5); // +5s for round-trip interaction time
 
       setPhase('thinking');
       setStatusText(`You said: "${transcript}"`);
@@ -774,13 +798,61 @@ export default function Home() {
       {/* ── Thinking dots ── */}
       {phase === 'thinking' && !bubble && !statusText && <ThinkingDots />}
 
-      {/* ── Microphone ── */}
+      {/* ── Microphone + Voucher row ── */}
       <div className="mic-area">
-        <MicButton
-          onTranscript={handleVoice}
-          disabled={micDisabled}
-          phase={phase}
-        />
+        <div className="mic-voucher-row">
+          <MicButton
+            onTranscript={handleVoice}
+            disabled={micDisabled}
+            phase={phase}
+          />
+        </div>
+
+        {/* ── Voucher claim button ── */}
+        <button
+          id="voucher-claim-btn"
+          className="voucher-claim-btn"
+          disabled={phase === 'speaking' || phase === 'thinking'}
+          onClick={async () => {
+            if (idleRef.current) clearTimeout(idleRef.current);
+
+            if (!hasTalked || totalTalkTime < VOUCHER_THRESHOLD) {
+              // Funny rejection
+              const remaining = Math.max(VOUCHER_THRESHOLD - totalTalkTime, 0);
+              const rejection = VOUCHER_REJECTIONS[Math.floor(Math.random() * VOUCHER_REJECTIONS.length)];
+              const timeMsg = hasTalked && remaining > 0
+                ? ` You need about ${Math.ceil(remaining)} more seconds of chatting!`
+                : '';
+              await kodySpeak(rejection + timeMsg);
+              setPhase('idle');
+              armIdle();
+              return;
+            }
+
+            // Eligible! Generate voucher
+            await kodySpeak('Woohoo! You earned a special Kody reward! Let me get that for you, champion!');
+            setPhase('thinking');
+            try {
+              const vRes = await fetch('/api/voucher', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ storyTitle: 'Chat with Kody' }),
+              });
+              const vData = await vRes.json();
+              setVoucher(vData);
+              setShowVoucher(true);
+              setBubble('');
+              setPhase('idle');
+            } catch {
+              await kodySpeak('Oops! Something went wrong getting your voucher. Try again, mate!');
+              setPhase('idle');
+              armIdle();
+            }
+          }}
+        >
+          <span className="voucher-claim-icon">🎁</span>
+          <span className="voucher-claim-text">Get my reward!</span>
+        </button>
       </div>
 
       {/* ── Dev Mode Panel ── */}
