@@ -5,6 +5,7 @@ import Link from 'next/link';
 
 type VoiceStatus = 'idle' | 'connecting' | 'connected' | 'stopping' | 'error';
 type Speaker = 'caller' | 'assistant' | 'system';
+type PrizeStatus = 'idle' | 'checking' | 'won' | 'unavailable';
 
 interface HistoryItem {
   id: string;
@@ -18,6 +19,30 @@ interface RealtimeSessionResponse {
   client_secret?: {
     value?: string;
   };
+}
+
+interface RealtimeEventPayload {
+  type?: string;
+  transcript?: string;
+  text?: string;
+  name?: string;
+  call_id?: string;
+  arguments?: string;
+  item?: {
+    type?: string;
+    name?: string;
+    call_id?: string;
+    arguments?: string;
+  };
+  error?: {
+    message?: string;
+  };
+}
+
+interface PrizeClaimResponse {
+  status: 'won' | 'no_prize_this_hour' | 'no_codes_left';
+  code?: string;
+  message: string;
 }
 
 const HISTORY_WINDOW_MS = 5 * 60 * 1000;
@@ -39,10 +64,14 @@ export default function VoicePage() {
   const [error, setError] = useState('');
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [connectionLabel, setConnectionLabel] = useState('Ready');
+  const [currentMode, setCurrentMode] = useState('Menu');
+  const [prizeStatus, setPrizeStatus] = useState<PrizeStatus>('idle');
+  const [prizeCode, setPrizeCode] = useState('');
   const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
   const dataChannelRef = useRef<RTCDataChannel | null>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
   const remoteAudioRef = useRef<HTMLAudioElement | null>(null);
+  const processedToolCallsRef = useRef<Set<string>>(new Set());
 
   const appendHistory = useCallback((speaker: Speaker, text: string) => {
     const trimmed = text.trim();
@@ -92,8 +121,65 @@ export default function VoicePage() {
 
   useEffect(() => stopSession, [stopSession]);
 
+  const handleToolCall = useCallback(async (payload: RealtimeEventPayload) => {
+    const functionName = payload.name || payload.item?.name;
+    const callId = payload.call_id || payload.item?.call_id;
+
+    if (functionName !== 'claim_prize_code' || !callId) return;
+    if (processedToolCallsRef.current.has(callId)) return;
+    processedToolCallsRef.current.add(callId);
+
+    setPrizeStatus('checking');
+
+    const claimResponse = await fetch('/api/prize/claim', { method: 'POST' });
+    const claimData = (await claimResponse.json()) as PrizeClaimResponse;
+
+    if (claimData.status === 'won' && claimData.code) {
+      setPrizeCode(claimData.code);
+      setPrizeStatus('won');
+      appendHistory('system', `Prize code reserved: ${claimData.code}`);
+    } else {
+      setPrizeCode('');
+      setPrizeStatus('unavailable');
+      appendHistory('system', claimData.message);
+    }
+
+    const dataChannel = dataChannelRef.current;
+    if (!dataChannel || dataChannel.readyState !== 'open') return;
+
+    dataChannel.send(JSON.stringify({
+      type: 'conversation.item.create',
+      item: {
+        type: 'function_call_output',
+        call_id: callId,
+        output: JSON.stringify(claimData),
+      },
+    }));
+
+    dataChannel.send(JSON.stringify({
+      type: 'response.create',
+      response: {
+        output_modalities: ['audio'],
+      },
+    }));
+  }, [appendHistory]);
+
+  const updateModeFromText = useCallback((text: string) => {
+    const lower = text.toLowerCase();
+
+    if (/go back|menu|start again|three choices/.test(lower)) {
+      setCurrentMode('Menu');
+    } else if (/story|parcel tale|once upon|another story/.test(lower)) {
+      setCurrentMode('Story');
+    } else if (/quiz|question|prize|win/.test(lower)) {
+      setCurrentMode('Prize quiz');
+    } else if (/australia post|letters|parcels|stamps|post office|deliveries/.test(lower)) {
+      setCurrentMode('Chat');
+    }
+  }, []);
+
   const handleRealtimeEvent = useCallback((event: MessageEvent<string>) => {
-    let payload: { type?: string; transcript?: string; text?: string; error?: { message?: string } };
+    let payload: RealtimeEventPayload;
 
     try {
       payload = JSON.parse(event.data);
@@ -103,11 +189,18 @@ export default function VoicePage() {
 
     if (payload.type === 'conversation.item.input_audio_transcription.completed') {
       appendHistory('caller', payload.transcript || '');
+      updateModeFromText(payload.transcript || '');
       return;
     }
 
     if (payload.type === 'response.audio_transcript.done' || payload.type === 'response.output_text.done') {
       appendHistory('assistant', payload.transcript || payload.text || '');
+      updateModeFromText(payload.transcript || payload.text || '');
+      return;
+    }
+
+    if (payload.type === 'response.function_call_arguments.done' || payload.type === 'response.output_item.done') {
+      void handleToolCall(payload);
       return;
     }
 
@@ -115,7 +208,7 @@ export default function VoicePage() {
       setError(payload.error?.message || 'Realtime session error.');
       setStatus('error');
     }
-  }, [appendHistory]);
+  }, [appendHistory, handleToolCall, updateModeFromText]);
 
   const startSession = useCallback(async () => {
     if (status === 'connecting' || status === 'connected') return;
@@ -166,12 +259,16 @@ export default function VoicePage() {
       dataChannelRef.current = dataChannel;
       dataChannel.addEventListener('message', handleRealtimeEvent);
       dataChannel.addEventListener('open', () => {
-        appendHistory('system', 'Connected. Ask an Australia Post question by voice.');
+        setCurrentMode('Menu');
+        setPrizeStatus('idle');
+        setPrizeCode('');
+        processedToolCallsRef.current.clear();
+        appendHistory('system', 'Connected. The Australia Post Koala will greet the child and offer three choices.');
         dataChannel.send(JSON.stringify({
           type: 'response.create',
           response: {
             output_modalities: ['audio'],
-            instructions: 'Briefly greet the caller as the Australia Post voice assistant and ask how you can help.',
+            instructions: 'Start the kiosk experience now. Say "Hi, I am the Australia Post Koala", greet the child, and offer exactly three distinct choices: story, quiz, or chat.',
           },
         }));
       });
@@ -214,14 +311,11 @@ export default function VoicePage() {
       <section className="mx-auto flex min-h-screen w-full max-w-5xl flex-col px-5 py-6">
         <header className="flex items-center justify-between gap-4 border-b border-[#d9cfc0] pb-4">
           <div>
-            <p className="text-sm font-bold uppercase tracking-[0.14em] text-[#c41230]">Australia Post prototype</p>
-            <h1 className="mt-1 text-3xl font-black">OpenAI Voice Chat</h1>
+            <p className="text-sm font-bold uppercase tracking-[0.14em] text-[#c41230]">Australia Post kids kiosk</p>
+            <h1 className="mt-1 text-3xl font-black">Voice Koala</h1>
           </div>
-          <Link
-            href="/"
-            className="rounded-md border border-[#c9bdae] px-3 py-2 text-sm font-semibold text-[#5b5148] transition hover:bg-white"
-          >
-            Story app
+          <Link href="/voice" className="rounded-md border border-[#c9bdae] px-3 py-2 text-sm font-semibold text-[#5b5148] transition hover:bg-white">
+            Voice only
           </Link>
         </header>
 
@@ -246,9 +340,34 @@ export default function VoicePage() {
               </button>
 
               <p className="mt-4 text-sm leading-6 text-[#6c6258]">
-                Uses your microphone and plays the model reply as live audio. The visible transcript is kept to the last five minutes.
+                Starts with three choices: story, quiz, or chat with the Australia Post Koala. Kids can say &quot;menu&quot; anytime.
               </p>
             </div>
+
+            <div className="rounded-lg border border-[#d9cfc0] bg-white p-5 shadow-sm">
+              <span className="text-sm font-semibold text-[#6c6258]">Current mode</span>
+              <p className="mt-2 text-2xl font-black text-[#241c15]">{currentMode}</p>
+            </div>
+
+            {prizeStatus !== 'idle' && (
+              <div className="rounded-lg border border-[#d9cfc0] bg-white p-5 shadow-sm">
+                <span className="text-sm font-semibold text-[#6c6258]">Prize</span>
+                {prizeStatus === 'checking' && (
+                  <p className="mt-2 text-base font-bold text-[#6c6258]">Checking this hour&apos;s prize...</p>
+                )}
+                {prizeStatus === 'won' && (
+                  <>
+                    <p className="mt-2 text-sm font-semibold text-[#26734d]">Prize code</p>
+                    <p className="mt-1 break-all rounded-md bg-[#f0fff6] px-3 py-2 text-2xl font-black text-[#145b36]">
+                      {prizeCode}
+                    </p>
+                  </>
+                )}
+                {prizeStatus === 'unavailable' && (
+                  <p className="mt-2 text-base font-bold text-[#8a6118]">This hour&apos;s prize has already been won.</p>
+                )}
+              </div>
+            )}
 
             {error && (
               <div className="rounded-lg border border-[#efb1b8] bg-[#fff4f5] p-4 text-sm font-medium leading-6 text-[#8a1023]">

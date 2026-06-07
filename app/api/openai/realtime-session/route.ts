@@ -42,6 +42,25 @@ export async function POST() {
         type: 'realtime',
         model: REALTIME_MODEL,
         instructions: AUSPOST_VOICE_SYSTEM_PROMPT,
+        tools: [
+          {
+            type: 'function',
+            name: 'claim_prize_code',
+            description: 'Reserve one one-time prize code after a child answers both quiz questions correctly. Call this only after both answers are correct.',
+            parameters: {
+              type: 'object',
+              properties: {
+                reason: {
+                  type: 'string',
+                  description: 'Short reason why the prize code is being requested.',
+                },
+              },
+              required: ['reason'],
+              additionalProperties: false,
+            },
+          },
+        ],
+        tool_choice: 'auto',
         audio: {
           input: {
             noise_reduction: {
@@ -53,9 +72,9 @@ export async function POST() {
             },
             turn_detection: {
               type: 'server_vad',
-              threshold: 0.65,
-              prefix_padding_ms: 300,
-              silence_duration_ms: 700,
+              threshold: 0.72,
+              prefix_padding_ms: 700,
+              silence_duration_ms: 2200,
               create_response: true,
               interrupt_response: false,
             },
