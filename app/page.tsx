@@ -41,18 +41,6 @@ const CONFETTI = [
 
 // ── Speech Bubble ─────────────────────────────────────────────────────────────
 
-function SpeechBubble({ text, visible }: { text: string; visible: boolean }) {
-  if (!visible || !text) return null;
-  return (
-    <div className="speech-bubble-container animate-slide-up">
-      <div className="speech-bubble">
-        <div className="speech-bubble-tail" />
-        <p className="speech-bubble-text">{text}</p>
-      </div>
-    </div>
-  );
-}
-
 // ── Thinking Indicator ────────────────────────────────────────────────────────
 
 function ThinkingDots() {
@@ -103,6 +91,7 @@ function LeadForm({ onClose }: { onClose: () => void }) {
   const input: React.CSSProperties = {
     width: '100%', padding: '10px 12px', borderRadius: 8, fontSize: 15,
     border: '1.5px solid #ddd', marginTop: 6, marginBottom: 14, boxSizing: 'border-box',
+    color: '#111827', background: '#fff', caretColor: '#111827',
   };
   const label: React.CSSProperties = { fontSize: 13, fontWeight: 600, color: '#444' };
 
@@ -117,19 +106,19 @@ function LeadForm({ onClose }: { onClose: () => void }) {
         {status === 'done' ? (
           <div style={{ textAlign: 'center', padding: '24px 0' }}>
             <div style={{ fontSize: 40 }}>🎉</div>
-            <p style={{ fontWeight: 700, marginTop: 12, color: '#26734d' }}>Thanks! We'll be in touch.</p>
+            <p style={{ fontWeight: 700, marginTop: 12, color: '#26734d' }}>Thanks! We&apos;ll be in touch.</p>
             <button onClick={onClose} style={{ marginTop: 16, padding: '10px 24px', borderRadius: 20, background: '#c41230', color: '#fff', border: 'none', fontWeight: 700, cursor: 'pointer' }}>Close</button>
           </div>
         ) : (
           <form onSubmit={handleSubmit}>
             <label style={label}>Full Name</label>
-            <input style={input} type="text" required value={name} onChange={(e) => setName(e.target.value)} placeholder="Jane Smith" />
+            <input className="lead-form-input" style={input} type="text" required value={name} onChange={(e) => setName(e.target.value)} placeholder="Jane Smith" />
 
             <label style={label}>Phone Number</label>
-            <input style={input} type="tel" required value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="04xx xxx xxx" />
+            <input className="lead-form-input" style={input} type="tel" required value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="04xx xxx xxx" />
 
             <label style={label}>Email</label>
-            <input style={input} type="email" required value={email} onChange={(e) => setEmail(e.target.value)} placeholder="jane@example.com" />
+            <input className="lead-form-input" style={input} type="email" required value={email} onChange={(e) => setEmail(e.target.value)} placeholder="jane@example.com" />
 
             {status === 'error' && (
               <p style={{ color: '#c41230', fontSize: 13, marginBottom: 10 }}>Something went wrong. Please try again.</p>
