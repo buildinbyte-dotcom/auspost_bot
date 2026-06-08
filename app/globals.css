@@ -236,11 +236,84 @@ body {
   animation: glow-pulse 4s ease-in-out infinite;
 }
 
-.mascot-canvas {
+.mascot-stage {
+  position: relative;
   width: 100%;
   height: 100%;
   max-width: 480px;
   max-height: 520px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.mascot-canvas {
+  width: 100%;
+  height: 100%;
+}
+
+.floating-voucher-code {
+  position: absolute;
+  top: clamp(18px, 8%, 44px);
+  bottom: auto;
+  left: 30%;
+  transform: translateX(-50%);
+  z-index: 20;
+  width: clamp(220px, 58%, 330px);
+  border: 2px solid rgba(255, 215, 0, 0.95);
+  border-radius: 14px;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.96) 0%, rgba(255, 248, 214, 0.96) 100%);
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.34), 0 0 20px rgba(255, 215, 0, 0.32);
+  padding: 8px 12px 10px;
+  text-align: center;
+  color: #2d1b69;
+  pointer-events: none;
+  backdrop-filter: blur(4px);
+}
+
+.floating-voucher-icon {
+  display: block;
+  font-size: 20px;
+  line-height: 1;
+  margin-bottom: 2px;
+}
+
+.floating-voucher-title {
+  display: block;
+  color: #cc2128;
+  font-size: 13px;
+  font-weight: 900;
+  line-height: 1.1;
+}
+
+.floating-voucher-label {
+  display: block;
+  margin-top: 5px;
+  color: #7f739d;
+  font-size: 8px;
+  font-weight: 800;
+  letter-spacing: 1.6px;
+  text-transform: uppercase;
+}
+
+.floating-voucher-value {
+  display: block;
+  margin-top: 2px;
+  font-family: var(--font-mono), monospace;
+  font-size: clamp(20px, 3vw, 30px);
+  font-weight: 900;
+  letter-spacing: 2px;
+  color: #7c5cfc;
+  overflow-wrap: anywhere;
+}
+
+.floating-voucher-hint {
+  display: block;
+  margin-top: 3px;
+  color: #6c5d84;
+  font-size: 10px;
+  font-weight: 700;
 }
 
 .mascot-loading {
