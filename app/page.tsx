@@ -68,6 +68,92 @@ function ThinkingDots() {
   );
 }
 
+// ── Lead Form ─────────────────────────────────────────────────────────────────
+
+function LeadForm({ onClose }: { onClose: () => void }) {
+  const [name, setName]     = useState('');
+  const [phone, setPhone]   = useState('');
+  const [email, setEmail]   = useState('');
+  const [status, setStatus] = useState<'idle' | 'sending' | 'done' | 'error'>('idle');
+
+  const handleSubmit = async (e: React.SyntheticEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    setStatus('sending');
+    try {
+      const res = await fetch('/api/lead', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, phone, email }),
+      });
+      setStatus(res.ok ? 'done' : 'error');
+    } catch {
+      setStatus('error');
+    }
+  };
+
+  const overlay: React.CSSProperties = {
+    position: 'fixed', inset: 0, zIndex: 100,
+    background: 'rgba(0,0,0,0.55)', display: 'flex',
+    alignItems: 'center', justifyContent: 'center', padding: 16,
+  };
+  const card: React.CSSProperties = {
+    background: '#fff', borderRadius: 16, padding: 28,
+    width: '100%', maxWidth: 380, boxShadow: '0 8px 32px rgba(0,0,0,0.18)',
+  };
+  const input: React.CSSProperties = {
+    width: '100%', padding: '10px 12px', borderRadius: 8, fontSize: 15,
+    border: '1.5px solid #ddd', marginTop: 6, marginBottom: 14, boxSizing: 'border-box',
+  };
+  const label: React.CSSProperties = { fontSize: 13, fontWeight: 600, color: '#444' };
+
+  return (
+    <div style={overlay} onClick={(e) => e.target === e.currentTarget && onClose()}>
+      <div style={card}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 18 }}>
+          <h2 style={{ margin: 0, fontSize: 18, fontWeight: 800, color: '#c41230' }}>Register Interest</h2>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', fontSize: 20, cursor: 'pointer', color: '#888' }}>✕</button>
+        </div>
+
+        {status === 'done' ? (
+          <div style={{ textAlign: 'center', padding: '24px 0' }}>
+            <div style={{ fontSize: 40 }}>🎉</div>
+            <p style={{ fontWeight: 700, marginTop: 12, color: '#26734d' }}>Thanks! We'll be in touch.</p>
+            <button onClick={onClose} style={{ marginTop: 16, padding: '10px 24px', borderRadius: 20, background: '#c41230', color: '#fff', border: 'none', fontWeight: 700, cursor: 'pointer' }}>Close</button>
+          </div>
+        ) : (
+          <form onSubmit={handleSubmit}>
+            <label style={label}>Full Name</label>
+            <input style={input} type="text" required value={name} onChange={(e) => setName(e.target.value)} placeholder="Jane Smith" />
+
+            <label style={label}>Phone Number</label>
+            <input style={input} type="tel" required value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="04xx xxx xxx" />
+
+            <label style={label}>Email</label>
+            <input style={input} type="email" required value={email} onChange={(e) => setEmail(e.target.value)} placeholder="jane@example.com" />
+
+            {status === 'error' && (
+              <p style={{ color: '#c41230', fontSize: 13, marginBottom: 10 }}>Something went wrong. Please try again.</p>
+            )}
+
+            <button
+              type="submit"
+              disabled={status === 'sending'}
+              style={{
+                width: '100%', padding: '12px 0', borderRadius: 24,
+                background: status === 'sending' ? '#aaa' : '#c41230',
+                color: '#fff', border: 'none', fontWeight: 800, fontSize: 15,
+                cursor: status === 'sending' ? 'not-allowed' : 'pointer',
+              }}
+            >
+              {status === 'sending' ? 'Sending…' : 'Submit'}
+            </button>
+          </form>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ── Main App ──────────────────────────────────────────────────────────────────
 
 export default function Home() {
@@ -78,6 +164,8 @@ export default function Home() {
   const [voucher, setVoucher]           = useState<VoucherData | null>(null);
   const [showVoucher, setShowVoucher]   = useState(false);
   const [inConversation, setInConversation] = useState(false);
+  const [showCC, setShowCC]             = useState(false);
+  const [showLeadForm, setShowLeadForm] = useState(false);
 
   const pcRef              = useRef<RTCPeerConnection | null>(null);
   const dcRef              = useRef<RTCDataChannel | null>(null);
@@ -87,21 +175,33 @@ export default function Home() {
   const processedToolCallsRef = useRef<Set<string>>(new Set());
   const audioCtxRef        = useRef<AudioContext | null>(null);
   const animFrameRef       = useRef<number | null>(null);
+  const bubbleClearRef     = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Use a ref for the event handler so it always has fresh state without stale closures
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const onDataEventRef = useRef<(event: Record<string, any>) => void>(() => {});
+
+  // ── Schedule bubble clear (cancels any pending clear first) ───────────────
+  const scheduleBubbleClear = useCallback((ms = 4000) => {
+    if (bubbleClearRef.current) clearTimeout(bubbleClearRef.current);
+    bubbleClearRef.current = setTimeout(() => {
+      setBubble('');
+      bubbleClearRef.current = null;
+    }, ms);
+  }, []);
+
+  const cancelBubbleClear = useCallback(() => {
+    if (bubbleClearRef.current) { clearTimeout(bubbleClearRef.current); bubbleClearRef.current = null; }
+  }, []);
 
   // ── Prize claim ────────────────────────────────────────────────────────────
 
   const handlePrizeClaim = useCallback(async (callId: string) => {
     if (processedToolCallsRef.current.has(callId)) return;
     processedToolCallsRef.current.add(callId);
-    console.log('[realtime] tool call: claim_prize_code, callId:', callId);
 
     const res = await fetch('/api/prize/claim', { method: 'POST' });
     const data = await res.json();
-    console.log('[realtime] prize claim result:', data);
 
     const dc = dcRef.current;
     if (dc?.readyState === 'open') {
@@ -136,22 +236,21 @@ export default function Home() {
 
       switch (type) {
         case 'session.created':
-          console.log('[realtime] ✅ session created');
           break;
 
         case 'input_audio_buffer.speech_started':
-          console.log('[realtime] 🎤 user started speaking');
           setPhase('listening');
+          cancelBubbleClear();
           setBubble('');
           break;
 
         case 'input_audio_buffer.speech_stopped':
-          console.log('[realtime] 🎤 user stopped speaking');
           setPhase('thinking');
           break;
 
         case 'conversation.item.input_audio_transcription.completed':
-          console.log('[realtime] 👤 user said:', event.transcript);
+          setBubble(`You: ${(event.transcript as string) || ''}`);
+          scheduleBubbleClear(3000);
           break;
 
         case 'response.audio.delta':
@@ -162,28 +261,52 @@ export default function Home() {
         case 'response.audio_transcript.delta': {
           const delta = (event.delta as string) || '';
           transcriptRef.current += delta;
-          // Pass only the new delta so mouth animation stays in sync with audio
           setSpeakingText(delta);
+          cancelBubbleClear();
           setBubble(transcriptRef.current);
           break;
         }
 
         case 'response.audio_transcript.done':
-          console.log('[realtime] 🐨 Kody said:', event.transcript);
           transcriptRef.current = '';
           setSpeakingText('');
+          break;
+
+        case 'response.text.delta': {
+          const td = (event.delta as string) || '';
+          transcriptRef.current += td;
+          cancelBubbleClear();
+          setBubble(transcriptRef.current);
+          break;
+        }
+
+        case 'response.text.done':
+          transcriptRef.current = '';
           break;
 
         case 'response.audio.done':
           setSpeakingText('');
           break;
 
-        case 'response.done':
-          console.log('[realtime] ✅ response done');
-          setIsTalking(false);
+        case 'response.done': {
           setPhase('idle');
-          setBubble('');
+
+          // Extract transcript from response.output (fallback when delta events don't fire)
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const items = (event.response?.output as any[]) || [];
+          for (const item of items) {
+            if (item.type === 'message' && Array.isArray(item.content)) {
+              for (const part of item.content) {
+                if ((part.type === 'audio' || part.type === 'output_audio') && part.transcript) {
+                  setBubble(part.transcript);
+                  break;
+                }
+              }
+            }
+          }
+          // Don't schedule a clear here — the amplitude tick clears after audio silence
           break;
+        }
 
         case 'response.function_call_arguments.done':
           if (event.name === 'claim_prize_code') {
@@ -192,16 +315,14 @@ export default function Home() {
           break;
 
         case 'error':
-          console.error('[realtime] ❌ error:', event.error);
           setPhase('idle');
           break;
 
         default:
-          //console.log('[realtime] event:', type, event);
           break;
       }
     };
-  }, [handlePrizeClaim]);
+  }, [handlePrizeClaim, scheduleBubbleClear, cancelBubbleClear]);
 
   // ── Stop session ──────────────────────────────────────────────────────────
 
@@ -222,7 +343,6 @@ export default function Home() {
     setBubble('');
     setPhase('idle');
     transcriptRef.current = '';
-    console.log('[realtime] session stopped');
   }, []);
 
   // ── Start WebRTC session ───────────────────────────────────────────────────
@@ -230,7 +350,6 @@ export default function Home() {
   const startSession = useCallback(async () => {
     try {
       // 1. Get ephemeral token from server
-      console.log('[realtime] requesting session token...');
       const res = await fetch('/api/openai/realtime-session', { method: 'POST' });
       const tokenData = await res.json();
 
@@ -239,7 +358,6 @@ export default function Home() {
       }
 
       const token = tokenData.value || tokenData.client_secret?.value || '';
-      console.log('[realtime] token received');
 
       if (!token) {
         throw new Error('OpenAI did not return a Realtime client secret.');
@@ -254,13 +372,11 @@ export default function Home() {
       pcRef.current = pc;
 
       pc.onconnectionstatechange = () => {
-        console.log('[realtime] connection state:', pc.connectionState);
         if (pc.connectionState === 'connected') setPhase('idle');
         if (pc.connectionState === 'failed') { setPhase('idle'); stopSession(); }
       };
 
       pc.ontrack = (e) => {
-        console.log('[realtime] 🔊 remote audio track — wiring mouth animation');
         if (audioRef.current) audioRef.current.srcObject = e.streams[0];
 
         // Drive mouth animation directly from audio amplitude
@@ -272,14 +388,21 @@ export default function Home() {
         source.connect(analyser); // analyse only, don't connect to speakers (audio element handles playback)
 
         const data = new Uint8Array(analyser.frequencyBinCount);
+        let prevTalking = false;
         const tick = () => {
           analyser.getByteFrequencyData(data);
           const avg = data.reduce((a, b) => a + b, 0) / data.length;
-          if (avg > 8) {
-            setIsTalking(true);
-            setPhase('speaking');
-          } else {
-            setIsTalking(false);
+          const nowTalking = avg > 8;
+
+          if (nowTalking !== prevTalking) {
+            prevTalking = nowTalking;
+            if (nowTalking) {
+              setIsTalking(true);
+              setPhase('speaking');
+            } else {
+              setIsTalking(false);
+              // CC stays visible — only cleared when user starts talking (speech_started)
+            }
           }
           animFrameRef.current = requestAnimationFrame(tick);
         };
@@ -294,7 +417,6 @@ export default function Home() {
 
       dc.addEventListener('message', (e) => onDataEventRef.current(JSON.parse(e.data)));
       dc.addEventListener('open', () => {
-        console.log('[realtime] data channel open — configuring audio + triggering greeting');
         processedToolCallsRef.current.clear();
         setPhase('thinking');
 
@@ -311,7 +433,6 @@ export default function Home() {
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
 
-      console.log('[realtime] exchanging SDP...');
       const sdpRes = await fetch('https://api.openai.com/v1/realtime/calls', {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/sdp' },
@@ -321,10 +442,9 @@ export default function Home() {
       if (!sdpRes.ok) throw new Error(await sdpRes.text());
 
       await pc.setRemoteDescription({ type: 'answer', sdp: await sdpRes.text() });
-      console.log('[realtime] ✅ WebRTC connected');
 
     } catch (err) {
-      console.error('[realtime] error:', err);
+      void err;
       stopSession();
       setPhase('idle');
     }
@@ -460,11 +580,60 @@ export default function Home() {
         />
       </div>
 
-      {/* ── Speech bubble ── */}
-      <SpeechBubble text={bubble} visible={!!bubble && phase === 'speaking'} />
+      {/* ── Closed captions ── */}
+      {showCC && bubble && bubble.length > 0 && (
+        <div style={{
+          position: 'fixed', bottom: 90, left: 0, right: 0, zIndex: 50,
+          display: 'flex', justifyContent: 'center', padding: '0 16px',
+          pointerEvents: 'none',
+        }}>
+          <div style={{
+            background: 'rgba(0,0,0,0.82)', color: '#fff', borderRadius: 10,
+            padding: '10px 20px', maxWidth: 600, textAlign: 'center',
+            fontSize: 17, lineHeight: 1.55, fontWeight: 500,
+            boxShadow: '0 4px 16px rgba(0,0,0,0.3)',
+            border: '1.5px solid rgba(255,255,255,0.15)',
+          }}>
+            {bubble}
+          </div>
+        </div>
+      )}
+
+      {/* ── Lead form modal ── */}
+      {showLeadForm && (
+        <LeadForm onClose={() => setShowLeadForm(false)} />
+      )}
+
+      {/* Speech bubble intentionally removed — CC button controls text display */}
 
       {/* ── Thinking dots ── */}
       {phase === 'thinking' && <ThinkingDots />}
+
+      {/* ── CC + Lead Form buttons ── */}
+      <div style={{ display: 'flex', gap: 10, justifyContent: 'center', marginTop: 8 }}>
+        <button
+          onClick={() => setShowCC((v) => !v)}
+          style={{
+            padding: '6px 14px', borderRadius: 20, border: '2px solid',
+            borderColor: showCC ? '#c41230' : '#aaa',
+            background: showCC ? '#c41230' : '#fff',
+            color: showCC ? '#fff' : '#555',
+            fontWeight: 700, fontSize: 13, cursor: 'pointer',
+          }}
+        >
+          CC {showCC ? 'ON' : 'OFF'}
+        </button>
+        <button
+          onClick={() => setShowLeadForm(true)}
+          style={{
+            padding: '6px 14px', borderRadius: 20, border: '2px solid #c41230',
+            background: '#fff', color: '#c41230',
+            fontWeight: 700, fontSize: 13, cursor: 'pointer',
+          }}
+        >
+          📋 Register Interest
+        </button>
+      </div>
 
       {/* ── Mic button ── */}
       <div className="mic-area">
