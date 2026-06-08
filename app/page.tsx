@@ -292,6 +292,7 @@ export default function Home() {
 
         case 'response.done': {
           setPhase('idle');
+          cancelBubbleClear(); // cancel any pending clear from user-speech transcription timer
 
           // Extract transcript from response.output (fallback when delta events don't fire)
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -306,7 +307,7 @@ export default function Home() {
               }
             }
           }
-          // Don't schedule a clear here — the amplitude tick clears after audio silence
+          // CC stays visible until user starts speaking (speech_started clears it)
           break;
         }
 
@@ -568,98 +569,65 @@ export default function Home() {
       {/* ── Thinking dots ── */}
       {phase === 'thinking' && <ThinkingDots />}
 
-      {/* ── CC + Lead Form buttons ── */}
-      <div style={{ display: 'flex', gap: 10, justifyContent: 'center', marginTop: 8 }}>
-        <button
-          onClick={() => setShowCC((v) => !v)}
-          style={{
-            padding: '6px 14px', borderRadius: 20, border: '2px solid',
-            borderColor: showCC ? '#c41230' : '#aaa',
-            background: showCC ? '#c41230' : '#fff',
-            color: showCC ? '#fff' : '#555',
-            fontWeight: 700, fontSize: 13, cursor: 'pointer',
-          }}
-        >
-          CC {showCC ? 'ON' : 'OFF'}
-        </button>
-        <button
-          onClick={() => setShowLeadForm(true)}
-          style={{
-            padding: '6px 14px', borderRadius: 20, border: '2px solid #c41230',
-            background: '#fff', color: '#c41230',
-            fontWeight: 700, fontSize: 13, cursor: 'pointer',
-          }}
-        >
-          📋 Register Interest
-        </button>
-      </div>
-
-      {/* ── Mic button ── */}
+      {/* ── Mic + buttons ── */}
       <div className="mic-area">
-        <div className="mic-voucher-row">
-          <div className="mic-container">
-            {/* Pulse rings when idle and not in conversation */}
-            {!inConversation && phase === 'idle' && (
-              <>
-                <div className="mic-pulse-ring mic-pulse-ring-1" />
-                <div className="mic-pulse-ring mic-pulse-ring-2" />
-              </>
-            )}
+        <div className="mic-container">
+          {!inConversation && phase === 'idle' && (
+            <>
+              <div className="mic-pulse-ring mic-pulse-ring-1" />
+              <div className="mic-pulse-ring mic-pulse-ring-2" />
+            </>
+          )}
+          {phase === 'listening' && (
+            <div className="mic-waves">
+              <div className="mic-wave mic-wave-1" />
+              <div className="mic-wave mic-wave-2" />
+              <div className="mic-wave mic-wave-3" />
+            </div>
+          )}
 
-            {/* Sound waves when listening */}
-            {phase === 'listening' && (
-              <div className="mic-waves">
-                <div className="mic-wave mic-wave-1" />
-                <div className="mic-wave mic-wave-2" />
-                <div className="mic-wave mic-wave-3" />
-              </div>
-            )}
+          <button
+            id="mic-button"
+            onClick={handleMicClick}
+            disabled={micDisabled}
+            className={[
+              'mic-button',
+              phase === 'listening' ? 'mic-active' : '',
+              inConversation && phase !== 'listening' ? 'mic-in-convo' : '',
+              micDisabled ? 'mic-disabled' : '',
+            ].join(' ')}
+            aria-label={inConversation ? 'Talking with Kody' : "Let's talk to Kody"}
+          >
+            <span className="mic-icon">
+              {phase === 'listening' ? '🎤' : phase === 'speaking' ? '🔊' : phase === 'thinking' ? '⏳' : inConversation ? '🎤' : '💬'}
+            </span>
+          </button>
 
-            <button
-              id="mic-button"
-              onClick={handleMicClick}
-              disabled={micDisabled}
-              className={[
-                'mic-button',
-                phase === 'listening' ? 'mic-active' : '',
-                inConversation && phase !== 'listening' ? 'mic-in-convo' : '',
-                micDisabled ? 'mic-disabled' : '',
-              ].join(' ')}
-              aria-label={inConversation ? 'Talking with Kody' : "Let's talk to Kody"}
-            >
-              <span className="mic-icon">
-                {phase === 'listening'
-                  ? '🎤'
-                  : phase === 'speaking'
-                    ? '🔊'
-                    : phase === 'thinking'
-                      ? '⏳'
-                      : inConversation
-                        ? '🎤'
-                        : '💬'}
-              </span>
+          <p className="mic-label">
+            {phase === 'listening' ? '🎧 Listening…' : phase === 'speaking' ? '🔊 Kody is talking…' : phase === 'thinking' ? '🤔 Thinking…' : phase === 'booting' ? '✨ Waking up…' : inConversation ? '🎧 Listening…' : "Let's Talk!"}
+          </p>
+
+        </div>
+
+        {/* All secondary buttons on one row */}
+        <div className="secondary-buttons">
+          {inConversation && (
+            <button className="secondary-btn finish-chat-btn" onClick={stopSession}>
+              👋 Finish
             </button>
-
-            <p className="mic-label">
-              {phase === 'listening'
-                ? '🎧 Listening…'
-                : phase === 'speaking'
-                  ? '🔊 Kody is talking…'
-                  : phase === 'thinking'
-                    ? '🤔 Kody is thinking…'
-                    : phase === 'booting'
-                      ? '✨ Waking up…'
-                      : inConversation
-                        ? '🎧 Listening…'
-                        : "Let's Talk!"}
-            </p>
-
-            {inConversation && (
-              <button className="finish-chat-btn" onClick={stopSession}>
-                👋 Finish Chatting
-              </button>
-            )}
-          </div>
+          )}
+          <button
+            onClick={() => setShowCC((v) => !v)}
+            className={`secondary-btn cc-btn${showCC ? ' cc-btn-on' : ''}`}
+          >
+            CC {showCC ? 'ON' : 'OFF'}
+          </button>
+          <button
+            onClick={() => setShowLeadForm(true)}
+            className="secondary-btn lead-btn"
+          >
+            📋 Register Interest
+          </button>
         </div>
       </div>
     </div>
