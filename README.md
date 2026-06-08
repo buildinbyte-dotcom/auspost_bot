@@ -18,6 +18,10 @@ Open [http://localhost:3000](http://localhost:3000) with your browser to see the
 
 You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
 
+## Main Rive voice experience
+
+The main app at [http://localhost:3000](http://localhost:3000) uses OpenAI Realtime voice with a Rive Australia Post Koala mascot. See [docs/rive-realtime-voice-flow.md](docs/rive-realtime-voice-flow.md) for how the WebRTC voice stream, transcript events, Rive state machine, mouth animation, and prize tool flow fit together.
+
 ## OpenAI voice prototype
 
 There is a smaller OpenAI Realtime voice-chat prototype at [http://localhost:3000/voice](http://localhost:3000/voice).
