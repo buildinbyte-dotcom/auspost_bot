@@ -30,32 +30,10 @@ function serializeCsv(rows: PrizeRow[]) {
   ].join('\n');
 }
 
-function isSameHour(a: Date, b: Date) {
-  return (
-    a.getFullYear() === b.getFullYear()
-    && a.getMonth() === b.getMonth()
-    && a.getDate() === b.getDate()
-    && a.getHours() === b.getHours()
-  );
-}
-
 export async function POST() {
   const csv = await fs.readFile(CSV_PATH, 'utf8');
   const rows = parseCsv(csv);
   const now = new Date();
-
-  const claimedThisHour = rows.some((row) => {
-    if (!row.claimedAt) return false;
-    const claimedAt = new Date(row.claimedAt);
-    return !Number.isNaN(claimedAt.getTime()) && isSameHour(claimedAt, now);
-  });
-
-  if (claimedThisHour) {
-    return Response.json({
-      status: 'no_prize_this_hour',
-      message: 'The prize for this hour has already been won.',
-    });
-  }
 
   const nextCode = rows.find((row) => !row.claimedAt);
 
@@ -75,4 +53,3 @@ export async function POST() {
     message: 'Prize code reserved.',
   });
 }
-

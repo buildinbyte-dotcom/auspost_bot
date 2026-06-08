@@ -176,6 +176,7 @@ export default function Home() {
   const audioCtxRef        = useRef<AudioContext | null>(null);
   const animFrameRef       = useRef<number | null>(null);
   const bubbleClearRef     = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const voucherTimerRef    = useRef<number | null>(null);
 
   // Use a ref for the event handler so it always has fresh state without stale closures
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -209,7 +210,14 @@ export default function Home() {
         type: 'conversation.item.create',
         item: { type: 'function_call_output', call_id: callId, output: JSON.stringify(data) },
       }));
-      dc.send(JSON.stringify({ type: 'response.create' }));
+      dc.send(JSON.stringify({
+        type: 'response.create',
+        response: {
+          instructions: data.status === 'won'
+            ? `Tell the child they won. Spell out the voucher code slowly, character by character: ${data.code}. Then say they can show the code given to the team member, and offer the menu again: story, quiz, or chat.`
+            : 'Tell the child there are no prize codes left right now, praise their effort, and offer the menu again: story, quiz, or chat.',
+        },
+      }));
     }
 
     if (data.status === 'won') {
@@ -224,6 +232,11 @@ export default function Home() {
         validAt: 'Any Australia Post store',
       });
       setShowVoucher(true);
+      if (voucherTimerRef.current !== null) window.clearTimeout(voucherTimerRef.current);
+      voucherTimerRef.current = window.setTimeout(() => {
+        setShowVoucher(false);
+        voucherTimerRef.current = null;
+      }, 17_000);
     }
   }, []);
 
@@ -314,9 +327,14 @@ export default function Home() {
           }
           break;
 
-        case 'error':
+        case 'error': {
+          const message = typeof event.error?.message === 'string' ? event.error.message : '';
+          if (message.includes('Audio content') && message.includes('already shorter')) {
+            break;
+          }
           setPhase('idle');
           break;
+        }
 
         default:
           break;
@@ -337,6 +355,10 @@ export default function Home() {
     localStreamRef.current?.getTracks().forEach((t) => t.stop());
     localStreamRef.current = null;
     if (audioRef.current) audioRef.current.srcObject = null;
+    if (voucherTimerRef.current !== null) {
+      window.clearTimeout(voucherTimerRef.current);
+      voucherTimerRef.current = null;
+    }
     setInConversation(false);
     setIsTalking(false);
     setSpeakingText('');
@@ -429,14 +451,14 @@ export default function Home() {
         }));
       });
 
-      // 5. SDP exchange — uses /v1/realtime/calls with the ephemeral token
+      // 5. SDP exchange — proxy through Next to avoid browser-side cross-origin fetch failures
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
 
-      const sdpRes = await fetch('https://api.openai.com/v1/realtime/calls', {
+      const sdpRes = await fetch('/api/openai/realtime-call', {
         method: 'POST',
-        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/sdp' },
-        body: offer.sdp,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sdp: offer.sdp, token }),
       });
 
       if (!sdpRes.ok) throw new Error(await sdpRes.text());
@@ -479,76 +501,6 @@ export default function Home() {
   }, [stopSession]);
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // VOUCHER SCREEN
-  // ═══════════════════════════════════════════════════════════════════════════
-
-  if (showVoucher && voucher) {
-    return (
-      <div className="app-screen voucher-screen">
-        {CONFETTI.map((c, i) => (
-          <div
-            key={i}
-            className={`confetti-piece ${c.anim}`}
-            style={{ left: c.left, width: c.size, height: c.size, backgroundColor: c.color }}
-          />
-        ))}
-
-        <div className="voucher-header">
-          <div className="brand-badge"><span className="brand-letter">P</span></div>
-          <span className="brand-name">Australia Post</span>
-          <button onClick={reset} className="voucher-reset-btn">↩ Again</button>
-        </div>
-
-        <div className="voucher-mascot">
-          <KoalaMascot isSpeaking={false} speakingText="" className="voucher-mascot-canvas" />
-        </div>
-
-        <h1 className="voucher-title">🎉 You did it!</h1>
-        <p className="voucher-subtitle">Amazing story explorer!</p>
-
-        <div className="voucher-card-wrapper">
-          <div className="voucher-card animate-pop-in">
-            <div className="voucher-card-header">
-              <div className="brand-badge-small"><span className="brand-letter-small">P</span></div>
-              <div>
-                <div className="voucher-card-title">Kody Storyteller Reward</div>
-                <div className="voucher-card-sub">Exclusive in-store reward</div>
-              </div>
-            </div>
-            <div className="voucher-card-body">
-              <div className="voucher-icon">{voucher.icon}</div>
-              <div className="voucher-reward">{voucher.reward}</div>
-              <p className="voucher-description">{voucher.description}</p>
-              <div className="voucher-code-box">
-                <p className="voucher-code-label">Voucher Code</p>
-                <p className="voucher-code">{voucher.code}</p>
-              </div>
-              <div className="voucher-story-badge">
-                <span>📖</span>
-                <span>Completed: <strong>{voucher.storyTitle}</strong></span>
-              </div>
-              <div className="voucher-meta">
-                <span>{voucher.validAt}</span>
-                <span>Expires {voucher.expiryDate}</span>
-              </div>
-            </div>
-            <div className="voucher-card-footer">
-              <p>📍 Show this to our team at the counter to claim!</p>
-            </div>
-          </div>
-        </div>
-
-        <div className="voucher-play-again">
-          <button onClick={reset} className="play-again-btn">
-            <span className="play-again-icon">🔄</span>
-            <span className="play-again-text">Play again</span>
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  // ═══════════════════════════════════════════════════════════════════════════
   // MAIN SCREEN
   // ═══════════════════════════════════════════════════════════════════════════
 
@@ -572,12 +524,30 @@ export default function Home() {
 
       {/* ── Mascot ── */}
       <div className="mascot-area">
-        <div className="mascot-glow" />
-        <KoalaMascot
-          isSpeaking={isTalking}
-          speakingText={speakingText}
-          className="mascot-canvas"
-        />
+        {showVoucher && voucher && CONFETTI.map((c, i) => (
+          <div
+            key={i}
+            className={`confetti-piece ${c.anim}`}
+            style={{ left: c.left, width: c.size, height: c.size, backgroundColor: c.color }}
+          />
+        ))}
+        <div className="mascot-stage">
+          {showVoucher && voucher && (
+            <div className="floating-voucher-code animate-pop-in" role="status" aria-live="polite">
+              <span className="floating-voucher-icon">{voucher.icon}</span>
+              <span className="floating-voucher-title">You won!</span>
+              <span className="floating-voucher-label">Voucher code</span>
+              <span className="floating-voucher-value">{voucher.code}</span>
+              <span className="floating-voucher-hint">Show this to the team member.</span>
+            </div>
+          )}
+          <div className="mascot-glow" />
+          <KoalaMascot
+            isSpeaking={isTalking}
+            speakingText={speakingText}
+            className="mascot-canvas"
+          />
+        </div>
       </div>
 
       {/* ── Closed captions ── */}
