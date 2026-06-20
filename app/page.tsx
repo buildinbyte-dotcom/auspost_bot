@@ -436,7 +436,7 @@ export default function Home() {
         dc.send(JSON.stringify({
           type: 'response.create',
           response: {
-            instructions: 'Say "Hi, I am the Australia Post Koala", greet the child warmly, and offer exactly three choices: story, quiz, or chat.',
+            instructions: 'Use a gentle Australian accent from the first word. Say "G’day mate!, I’m the Australia Post Koala", greet the child warmly, and offer exactly three choices: story, quiz, or chat. Keep it clear and easy for young kids.',
           },
         }));
       });
