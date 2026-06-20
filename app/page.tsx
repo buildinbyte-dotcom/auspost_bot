@@ -203,8 +203,8 @@ export default function Home() {
         type: 'response.create',
         response: {
           instructions: data.status === 'won'
-            ? `Tell the child they won. Spell out the voucher code slowly, character by character: ${data.code}. Then say they can show the code given to the team member, and offer the menu again: story, quiz, or chat.`
-            : 'Tell the child there are no prize codes left right now, praise their effort, and offer the menu again: story, quiz, or chat.',
+            ? `Use the gentle Aussie quiz-host style. Tell the child "Beauty, you won!" or "Good on ya, you won!" Spell out the voucher code slowly, character by character: ${data.code}. Then say they can show the code to the team member, and offer the menu again: story, quiz, or chat.`
+            : 'Use the gentle Aussie quiz-host style. Tell the child there are no prize codes left right now, praise their effort with a phrase like "good on ya", and offer the menu again: story, quiz, or chat.',
         },
       }));
     }
@@ -436,7 +436,7 @@ export default function Home() {
         dc.send(JSON.stringify({
           type: 'response.create',
           response: {
-            instructions: 'Say "Hi, I am the Australia Post Koala", greet the child warmly, and offer exactly three choices: story, quiz, or chat.',
+            instructions: 'Use a gentle Australian accent from the first word. Say "G’day mate!, I’m the Australia Post Koala", greet the child warmly, and offer exactly three choices: story, quiz, or chat. Keep it clear and easy for young kids.',
           },
         }));
       });
